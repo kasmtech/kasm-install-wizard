@@ -11,7 +11,7 @@ before_script:
 push_to_s3:
   stage: upload
   script:
-    - apk add aws-cli gzip tar
+    - apk add aws-cli curl gzip tar
     - export S3_URL="s3://${S3_BUCKET}/wizard/${CI_COMMIT_SHA}.tar.gz"
     - tar -czf ${CI_COMMIT_SHA}.tar.gz *
     - aws s3 cp ${CI_COMMIT_SHA}.tar.gz s3://${S3_BUCKET}/wizard/
