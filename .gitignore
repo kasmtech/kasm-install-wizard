@@ -1,0 +1,5 @@
+public/img/thumbnails/*.png
+node_modules
+*.swp
+*.swo
+package-lock.json

@@ -1,0 +1,117 @@
+#terminal {
+  display: none;
+  position: fixed;
+  width: 100%;
+  height: calc(100% - 50px);
+  left: 0;
+  top: 50px;
+}
+
+#container {
+  position: fixed;
+  width: 100%;
+  height: calc(100% - 50px);
+  left: 0;
+  top: 50px;
+  overflow: auto; 
+}
+
+#EULA {
+  width: 90%;
+  height: 80%;
+  white-space: pre-wrap;
+  overflow: auto;
+  position: absolute;
+  top: 10%;
+  left: 50%;
+  transform: translate(-50%, -10%);
+  box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+}
+
+#EULAButton {
+  position: absolute;
+  top: 90%;
+  left: 50%;
+  transform: translate(-50%, -90%);
+  box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+}
+
+#titleBar {
+  width: 100%;
+  height: 50px;
+  background: #595959;
+  color: white;
+  display: inline-block;
+}
+
+form {
+  max-width: 80%;
+  margin:20px auto;
+  display:block;
+}
+
+#title {
+  float: right;
+  height: 50px;
+  line-height: 50px;
+  text-align: center;
+  margin-right: 10px;
+}
+
+#logo {
+  width: 138px;
+  height: 40px;
+  margin: 5px;
+}
+
+.center {
+  margin:10px auto;
+  display:block;
+}
+
+#systeminfo {
+  margin: 10px;
+  width: calc(100% - 20px);
+}
+
+#dockerinfo {
+  margin: 10px;
+  width: calc(100% - 20px);
+}
+
+/* Image cards */
+.card {
+  box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+  transition: 0.3s;
+  width: 150px;
+  height: 150px;
+  text-align: center;
+  margin: 5px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  cursor: pointer;
+  border-radius: 20px;
+}
+
+.card p {
+  margin: 1px;
+}
+
+.card h2 {
+  margin: 5px;
+}
+
+.card:hover {
+  box-shadow: 0 8px 16px 0 rgba(0,0,0,0.2);
+}
+
+.cardcontainer {
+  display: flex;
+  flex-flow: row wrap;
+}
+
+.thumb {
+  width: 100px;
+  height: 100px;
+
+}
