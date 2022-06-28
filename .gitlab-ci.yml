@@ -1,0 +1,21 @@
+image: docker
+services:
+  - docker:dind
+
+stages:
+  - upload
+
+before_script:
+  - export SANITIZED_BRANCH="$(echo $CI_COMMIT_REF_NAME | sed -r 's#^release/##'  | sed 's/\//_/g')"
+
+push_to_s3:
+  stage: upload
+  script:
+    - apk add aws-cli gzip tar
+    - export S3_URL="s3://${S3_BUCKET}/wizard/${CI_COMMIT_SHA}.tar.gz"
+    - tar -czf ${CI_COMMIT_SHA}.tar.gz *
+    - aws s3 cp ${CI_COMMIT_SHA}.tar.gz s3://${S3_BUCKET}/wizard/
+    - aws s3 cp ${CI_COMMIT_SHA}.tar.gz s3://${S3_BUCKET}/wizard/${SANITIZED_BRANCH}.tar.gz
+    - curl --request POST --header "PRIVATE-TOKEN:${GITLAB_API_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/statuses/${CI_COMMIT_SHA}?state=success&name=build-url&target_url=${S3_URL}"
+  tags:
+    - aws-autoscale
