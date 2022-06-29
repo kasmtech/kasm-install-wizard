@@ -1,16 +1,19 @@
 // Imports
 var Docker = require('dockerode');
 var socketIO = require('socket.io');
-var express = require('express');
-var app = require('express')();
-var http = require('http').Server(app);
-var baserouter = express.Router();
 var pty = require("node-pty");
 var fsw = require('fs').promises;
 var fs = require('fs');
 var os = require('os');
 var yaml = require('js-yaml');
 var si = require('systeminformation');
+var express = require('express');
+var app = require('express')();
+var privateKey  = fs.readFileSync('/opt/kasm/certs/kasm_wizard.key', 'utf8');
+var certificate = fs.readFileSync('/opt/kasm/certs/kasm_wizard.crt', 'utf8');
+var credentials = {key: privateKey, cert: certificate};
+var https = require('https').Server(credentials, app);
+var baserouter = express.Router();
 var docker = new Docker({socketPath: '/var/run/docker.sock'});
 var arch = os.arch().replace('x64', 'amd64');
 var baseUrl = process.env.SUBFOLDER || '/';
@@ -35,10 +38,10 @@ baserouter.get("/favicon.ico", function (req, res) {
   res.sendFile(__dirname + '/public/favicon.ico');
 });
 app.use(baseUrl, baserouter);
-http.listen(3000);
+https.listen(3000);
 
 //// socketIO comms ////
-io = socketIO(http, {path: baseUrl + 'socket.io'});
+io = socketIO(https, {path: baseUrl + 'socket.io'});
 io.on('connection', async function (socket) {
   // Run bash install with our custom flags
   async function install(data) {

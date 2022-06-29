@@ -207,7 +207,7 @@ async function pickImages() {
   titleChange('Image Selection');
   let imagesDiv = $('<div>', {class: 'cardcontainer', id: 'images'});
   $('#container').append(imagesDiv);
-  for await (let image of Object.keys(images.images)) {
+  for await (let image of Object.keys(images.images).sort(Intl.Collator().compare)) {
     let imageName = $('<p>').text(image);
     let imageDiv = $('<div>', {
       class: 'card',
