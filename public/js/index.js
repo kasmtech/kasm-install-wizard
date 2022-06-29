@@ -151,7 +151,26 @@ async function renderDash(info) {
     $('<header>').text('System Information'),
     $('<table>').append(sysinfoTable)
   ]);
-  $('#container').append([systemCard, dockerCard]);
+  let killButton = $('<button>', {class: 'btn btn-default btn-ghost center', onclick: 'nowizard()'}).text('Stop Install Wizard');
+  $('#container').append([
+    systemCard,
+    dockerCard,
+    killButton
+  ]);
+}
+
+// Kill off wizard
+function nowizard() {
+  socket.emit('nowizard');
+}
+function wizardKilled() {
+  showContainer();
+  titleChange('Wizard killed');
+  let titleBar = $('<div>');
+  titleBar.append($('<h2>', {class: 'center'}).text('Install Wizard has been disabled'));
+  titleBar.append($('<h3>', {class: 'center'}).text('To re-enable please remove the /opt/NO_WIZARD file'));
+  titleBar.append($('<h3>', {class: 'center'}).text('And restart the container'));
+  $('#container').append(titleBar); 
 }
 
 // Render primary form
@@ -289,6 +308,7 @@ socket.on('renderinstall', renderInstall);
 socket.on('renderdash', renderDash);
 socket.on('term', renderTerm);
 socket.on('done', done);
+socket.on('wizardkilled', wizardKilled);
 
 // Render landing on page load
 window.onload = function() {

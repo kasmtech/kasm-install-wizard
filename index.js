@@ -95,7 +95,14 @@ io.on('connection', async function (socket) {
       socket.emit('renderinstall', [EULA, images]);
     }
   }
+  // Disable wizard
+  async function noWizard() {
+    await fsw.writeFile('/opt/NO_WIZARD', '');
+    socket.emit('wizardkilled');
+    let cmd = pty.spawn('/usr/bin/pkill', ['node']);
+  }
   //// Incoming requests ////
   socket.on('renderlanding', renderLanding);
   socket.on('install', install);
+  socket.on('nowizard', noWizard);
 });
