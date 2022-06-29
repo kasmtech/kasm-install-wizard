@@ -30,6 +30,9 @@ As configured files ingested from a current Kasm Workspaces installer are needed
 ├── default_images_amd64.yaml
 ├── default_images_arm64.yaml
 └── LICENSE.txt
+/opt/kasm/certs/
+├── kasm_wizard.crt
+└── kasm_wizard.key
 /kasm_release/
 └── Full Kasm workspaces installer
 ```
