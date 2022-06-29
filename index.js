@@ -52,30 +52,24 @@ io.on('connection', async function (socket) {
     if (installSettings.useRolling == true) {
       installFlags.push('-O');
     }
-    if (installSettings.noDownload == true) {
+    if ((installSettings.noDownload == true) || (imagesI == false)) {
       installFlags.push('-u');
     }
-    if (imagesI == false) {
-      installFlags.push('-I');
+    if ((imagesI.hasOwnProperty('images')) && (Object.keys(imagesI.images).length < 10)) {
       installFlags.push('-b');
-    } else {
-      // If installing less than 10 images skip disk check
-      if (Object.keys(imagesI.images).length < 10) {
-        installFlags.push('-b');
-      }
-      // Flag the images properly based on selection
-      for await (let image of Object.keys(images.images)) {
-        if (imagesI.images.hasOwnProperty(image)) {
-          imagesD.images[image].enabled = true;
-          imagesD.images[image].hidden = false;
-        } else {
-          imagesD.images[image].enabled = false;
-          imagesD.images[image].hidden = true;
-        }
-      }
-      let yamlStr = yaml.dump(imagesD);
-      await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
     }
+    // Flag the images properly based on selection
+    for await (let image of Object.keys(images.images)) {
+      if ((imagesI.hasOwnProperty('images')) && (imagesI.images.hasOwnProperty(image))) {
+        imagesD.images[image].enabled = true;
+        imagesD.images[image].hidden = false;
+      } else {
+        imagesD.images[image].enabled = false;
+        imagesD.images[image].hidden = true;
+      }
+    }
+    let yamlStr = yaml.dump(imagesD);
+    await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
     let cmd = pty.spawn('/bin/bash', installFlags);
     cmd.on('data', function(data) {
       socket.emit('term', data);
