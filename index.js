@@ -19,6 +19,7 @@ var arch = os.arch().replace('x64', 'amd64');
 var baseUrl = process.env.SUBFOLDER || '/';
 var version = process.env.VERSION || 'stable';
 var port = process.env.KASM_PORT || '443';
+const { spawn } = require('node:child_process');
 var EULA;
 var images;
 // Grab installer variables
@@ -68,6 +69,15 @@ io.on('connection', async function (socket) {
         imagesD.images[image].hidden = true;
       }
     }
+    if (installSettings.forceGpu !== 'disabled') {
+      let card = installSettings.forceGpu.slice(-1);
+      let render = (Number(card) + 128).toString();
+      console.log(card, render);
+      for await (let image of Object.keys(images.images)) {
+        imagesD.images[image]['run_config'] = '{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}'
+        imagesD.images[image]['exec_config'] = '{"first_launch":{"user":"root","cmd": "bash -c \'chown -R kasm-user:kasm-user /dev/dri/*\'"}}'
+      }
+    }
     let yamlStr = yaml.dump(imagesD);
     await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
     let cmd = pty.spawn('/bin/bash', installFlags);
@@ -92,7 +102,18 @@ io.on('connection', async function (socket) {
       dashinfo['port'] = port;
       socket.emit('renderdash', dashinfo);
     } else {
-      socket.emit('renderinstall', [EULA, images]);
+      let gpuData = [];
+      let gpuCmd = spawn('/gpuinfo.sh');
+      gpuCmd.stdout.on('data', function(data) {
+        gpuData.push(data);
+      });
+      gpuCmd.on('close', function(code) {
+        if (code == 0) {
+          socket.emit('renderinstall', [EULA, images, JSON.parse(gpuData.join(''))]);
+        } else {
+          socket.emit('renderinstall', [EULA, images, {}]);
+        }
+      });
     }
   }
   // Disable wizard
