@@ -1,6 +1,7 @@
 // Variables
 var EULA;
 var images;
+var gpus;
 var term;
 var installImages = [];
 var installSettings = {};
@@ -73,6 +74,7 @@ function renderInstall(data) {
   titleChange('EULA');
   EULA = data[0];
   images = data[1];
+  gpus = data[2];
   let EULADiv = $('<div>', {id: 'EULA'}).text(EULA);
   $('#container').append(EULADiv);
   let EULAButton = $('<button>', {id: 'EULAButton', onclick: 'pickSettings()', class: 'btn btn-default btn-ghost'}).text('Accept and continue');
@@ -195,6 +197,14 @@ async function pickSettings() {
     $('<label>', {for: 'noDownload'}).text('Skip Image Download: '),
     $('<input>', {name: 'noDownload', id: 'noDownload', type: 'checkbox'})
   ]);
+  let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
+  for await (let card of Object.keys(gpus)) {
+    gpuOptions.push($('<option>', {value: card}).text(card + ' - ' + gpus[card]));
+  }
+  let forceGpu = $('<div>', {class: 'form-group'}).append([
+    $('<label>', {for: 'forceGpu'}).text('Use GPU on all images: '),
+    $('<select>', {name: 'forceGpu', id: 'forceGpu',}).append(gpuOptions)
+  ]);
   let submit = $('<div>', {class: 'form-group'}).append([
     $('<input>', {name: 'submit', type: 'submit', value: 'Next', class: 'btn btn-default btn-ghost'})
   ]);
@@ -203,6 +213,7 @@ async function pickSettings() {
     userPass,
     useRolling,
     noDownload,
+    forceGpu,
     submit
   ]);
   form.append(fieldset);
@@ -214,6 +225,7 @@ async function pickSettings() {
     installSettings.userPass = $('#userPass').val();
     installSettings.useRolling = $('#useRolling').is(":checked");
     installSettings.noDownload = $('#noDownload').is(":checked");
+    installSettings.forceGpu = $('#forceGpu').val();
     pickImages();
   });
 }
