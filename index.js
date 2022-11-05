@@ -6,6 +6,7 @@ var fsw = require('fs').promises;
 var fs = require('fs');
 var os = require('os');
 var yaml = require('js-yaml');
+var _ = require('lodash');
 var si = require('systeminformation');
 var express = require('express');
 var app = require('express')();
@@ -72,10 +73,21 @@ io.on('connection', async function (socket) {
     if (installSettings.forceGpu !== 'disabled') {
       let card = installSettings.forceGpu.slice(-1);
       let render = (Number(card) + 128).toString();
-      console.log(card, render);
+      let baseRun = JSON.parse('{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}');
+      let baseExec = JSON.parse('{"first_launch":{"user":"root","cmd": "bash -c \'chown -R kasm-user:kasm-user /dev/dri/*\'"}}');
       for await (let image of Object.keys(images.images)) {
-        imagesD.images[image]['run_config'] = '{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}'
-        imagesD.images[image]['exec_config'] = '{"first_launch":{"user":"root","cmd": "bash -c \'chown -R kasm-user:kasm-user /dev/dri/*\'"}}'
+        if (imagesD.images[image]['run_config']) {
+          finalRun = _.merge(JSON.parse(imagesD.images[image]['run_config']), baseRun)
+        } else {
+          finalRun = baseRun;
+        }
+        if (imagesD.images[image]['exec_config']) {
+          finalExec = _.merge(JSON.parse(imagesD.images[image]['exec_config']), baseExec)
+        } else {
+          finalExec = baseExec;
+        }
+        imagesD.images[image]['run_config'] = JSON.stringify(finalRun);
+        imagesD.images[image]['exec_config'] = JSON.stringify(finalExec);
       }
     }
     let yamlStr = yaml.dump(imagesD);
