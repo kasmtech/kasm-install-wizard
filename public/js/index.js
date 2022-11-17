@@ -199,7 +199,7 @@ async function pickSettings() {
   ]);
   let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
   for await (let card of Object.keys(gpus)) {
-    gpuOptions.push($('<option>', {value: card}).text(card + ' - ' + gpus[card]));
+    gpuOptions.push($('<option>', {value: card + '|' + gpus[card]}).text(card + ' - ' + gpus[card]));
   }
   let forceGpu = $('<div>', {class: 'form-group'}).append([
     $('<label>', {for: 'forceGpu'}).text('Use GPU on all images: '),
