@@ -76,10 +76,11 @@ io.on('connection', async function (socket) {
       let card = gpu.slice(-1);
       let render = (Number(card) + 128).toString();
       // Handle NVIDIA Gpus
+      var baseRun;
       if (gpuName.indexOf('NVIDIA') !== -1) {
-        let baseRun = JSON.parse('{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"],"device_requests":[{"driver": "","count": -1,"device_ids": null,"capabilities":[["gpu"]],"options":{}}]}');
+        baseRun = JSON.parse('{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"],"device_requests":[{"driver": "","count": -1,"device_ids": null,"capabilities":[["gpu"]],"options":{}}]}');
       } else {
-        let baseRun = JSON.parse('{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}');
+        baseRun = JSON.parse('{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}');
       }
       let baseExec = JSON.parse('{"first_launch":{"user":"root","cmd": "bash -c \'chown -R kasm-user:kasm-user /dev/dri/*\'"}}');
       for await (let image of Object.keys(images.images)) {
