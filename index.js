@@ -50,7 +50,7 @@ io.on('connection', async function (socket) {
     installSettings = data[0];
     let imagesI = data[1];
     let imagesD = images;
-    installFlags = ['/kasm_release/install.sh', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
+    installFlags = ['/kasm_release/install.sh', '-A', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
     if (installSettings.useRolling == true) {
       installFlags.push('-O');
     }
