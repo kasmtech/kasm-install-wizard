@@ -6,6 +6,7 @@ var fsw = require('fs').promises;
 var fs = require('fs');
 var os = require('os');
 var yaml = require('js-yaml');
+var _ = require('lodash');
 var si = require('systeminformation');
 var express = require('express');
 var app = require('express')();
@@ -19,6 +20,7 @@ var arch = os.arch().replace('x64', 'amd64');
 var baseUrl = process.env.SUBFOLDER || '/';
 var version = process.env.VERSION || 'stable';
 var port = process.env.KASM_PORT || '443';
+const { spawn } = require('node:child_process');
 var EULA;
 var images;
 // Grab installer variables
@@ -48,7 +50,7 @@ io.on('connection', async function (socket) {
     installSettings = data[0];
     let imagesI = data[1];
     let imagesD = images;
-    installFlags = ['/kasm_release/install.sh', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
+    installFlags = ['/kasm_release/install.sh', '-A', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
     if (installSettings.useRolling == true) {
       installFlags.push('-O');
     }
@@ -66,6 +68,34 @@ io.on('connection', async function (socket) {
       } else {
         imagesD.images[image].enabled = false;
         imagesD.images[image].hidden = true;
+      }
+    }
+    if (installSettings.forceGpu !== 'disabled') {
+      let gpu = installSettings.forceGpu.split('|')[0];
+      let gpuName = installSettings.forceGpu.split('|')[1];
+      let card = gpu.slice(-1);
+      let render = (Number(card) + 128).toString();
+      // Handle NVIDIA Gpus
+      var baseRun;
+      if (gpuName.indexOf('NVIDIA') !== -1) {
+        baseRun = JSON.parse('{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"],"device_requests":[{"driver": "","count": -1,"device_ids": null,"capabilities":[["gpu"]],"options":{}}]}');
+      } else {
+        baseRun = JSON.parse('{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}');
+      }
+      let baseExec = JSON.parse('{"first_launch":{"user":"root","cmd": "bash -c \'chown -R kasm-user:kasm-user /dev/dri/*\'"}}');
+      for await (let image of Object.keys(images.images)) {
+        if (imagesD.images[image]['run_config']) {
+          finalRun = _.merge(JSON.parse(imagesD.images[image]['run_config']), baseRun)
+        } else {
+          finalRun = baseRun;
+        }
+        if (imagesD.images[image]['exec_config']) {
+          finalExec = _.merge(JSON.parse(imagesD.images[image]['exec_config']), baseExec)
+        } else {
+          finalExec = baseExec;
+        }
+        imagesD.images[image]['run_config'] = JSON.stringify(finalRun);
+        imagesD.images[image]['exec_config'] = JSON.stringify(finalExec);
       }
     }
     let yamlStr = yaml.dump(imagesD);
@@ -92,7 +122,18 @@ io.on('connection', async function (socket) {
       dashinfo['port'] = port;
       socket.emit('renderdash', dashinfo);
     } else {
-      socket.emit('renderinstall', [EULA, images]);
+      let gpuData = [];
+      let gpuCmd = spawn('/gpuinfo.sh');
+      gpuCmd.stdout.on('data', function(data) {
+        gpuData.push(data);
+      });
+      gpuCmd.on('close', function(code) {
+        if (code == 0) {
+          socket.emit('renderinstall', [EULA, images, JSON.parse(gpuData.join(''))]);
+        } else {
+          socket.emit('renderinstall', [EULA, images, {}]);
+        }
+      });
     }
   }
   // Disable wizard
