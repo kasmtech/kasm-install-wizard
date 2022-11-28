@@ -5,6 +5,7 @@ var gpus;
 var term;
 var installImages = [];
 var installSettings = {};
+var upgradeSettings = {};
 var selected = false;
 
 // Socket.io connection
@@ -37,6 +38,25 @@ async function install() {
       Object.assign(selectedImages.images, {[image]: images.images[image]});
     }
     socket.emit('install', [installSettings, selectedImages]);
+  }
+}
+
+// Execute upgrade
+async function upgrade() {
+  showTerminal()
+  titleChange('Upgrading');
+  // Create new object based on image selection
+  let selectedImages = {images: {}};
+  if (installImages.length == 0) {
+    socket.emit('upgrade', [upgradeSettings, false]);
+  } else {
+    for await (let image of installImages) {
+      if (images.images[image].hasOwnProperty('enabled')) {
+        images.images[image].enabled = true;
+      }
+      Object.assign(selectedImages.images, {[image]: images.images[image]});
+    }
+    socket.emit('upgrade', [upgradeSettings, selectedImages]);
   }
 }
 
@@ -82,15 +102,34 @@ function renderInstall(data) {
 }
 
 // Render Dashboard
-async function renderDash(info) {
+async function renderDash(data) {
   showContainer();
   titleChange('Dashboard');
+  let info = data[0];
+  images = data[1];
+  // Store GPU info
+  $('body').data('gpuInfo', info.gpuInfo);
+  // Upgrade button if needed
+  var upgrade;
+  if (info.currentVersion !== info.localVersion) {
+    upgrade = $('<button>', {class: 'btn btn-primary', onclick: 'renderUpgrade()'}).text('Upgrade to ' + info.currentVersion)
+  } else {
+    upgrade = info.currentVersion;
+  }
   // Kasm docker containers
   containersTable = $('<tbody>');
   containersTable.append(
     $('<tr>').append([
       $('<th>').text('Web URL'),
       $('<td>').append($('<a>', {href: 'https://' + host + ':' + info.port, target: '_blank'}).text('https://' + host + ':' + info.port))
+    ]),
+    $('<tr>').append([
+      $('<th>').text('Installed Version'),
+      $('<td>').text(info.localVersion)
+    ]),
+    $('<tr>').append([
+      $('<th>').text('Current Version'),
+      $('<td>').append(upgrade)
     ])
   );
   for await (let container of info.containers) {
@@ -226,14 +265,60 @@ async function pickSettings() {
     installSettings.useRolling = $('#useRolling').is(":checked");
     installSettings.noDownload = $('#noDownload').is(":checked");
     installSettings.forceGpu = $('#forceGpu').val();
-    pickImages();
+    pickImages(false);
+  });
+}
+
+// Render upgrade form
+async function renderUpgrade() {
+  showContainer();
+  let gpus = $('body').data('gpuInfo');
+  titleChange('Upgrade Settings');
+  let form = $('<form>', {id: 'settingsform'});
+  let fieldset = $('<fieldset>').append($('<legend>').text('Kasm Upgrade Settings'));
+  let keepOldImages = $('<div>', {class: 'form-group'}).append([
+    $('<label>', {for: 'keepOldImages'}).text('Do not purge existing images: '),
+    $('<input>', {name: 'keepOldImages', id: 'keepOldImages', type: 'checkbox'})
+  ]);
+  let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
+  for await (let card of Object.keys(gpus)) {
+    gpuOptions.push($('<option>', {value: card + '|' + gpus[card]}).text(card + ' - ' + gpus[card]));
+  }
+  let forceGpu = $('<div>', {class: 'form-group'}).append([
+    $('<label>', {for: 'forceGpu'}).text('Use GPU on all new images: '),
+    $('<select>', {name: 'forceGpu', id: 'forceGpu',}).append(gpuOptions)
+  ]);
+  let submit = $('<div>', {class: 'form-group'}).append([
+    $('<input>', {name: 'submit', type: 'submit', value: 'Next', class: 'btn btn-default btn-ghost'})
+  ]);
+  fieldset.append([
+    keepOldImages,
+    forceGpu,
+    submit
+  ]);
+  form.append(fieldset);
+  $('#container').append(form);
+  // Grab data and move to image selection
+  form.on('submit', function (e) {
+    e.preventDefault();
+    upgradeSettings.keepOldImages = $('#keepOldImages').is(":checked");
+    upgradeSettings.forceGpu = $('#forceGpu').val();
+    pickImages(true);
   });
 }
 
 
-
 // Render image selection
-async function pickImages() {
+async function pickImages(upgrade) {
+  var installText;
+  var installFunction;
+  if (upgrade) {
+    installText = 'Upgrade';
+    installFunction = 'upgrade()';
+  } else {
+    installText = 'Install';
+    installFunction = 'install()';
+  }
   showContainer();
   titleChange('Image Selection');
   let imagesDiv = $('<div>', {class: 'cardcontainer', id: 'images'});
@@ -251,7 +336,7 @@ async function pickImages() {
     $('#images').append(imageDiv);
   }
   let allButton = $('<button>', {class: 'btn btn-default btn-ghost center', onclick: 'selectAll()'}).text('Select All');
-  let installButton = $('<button>', {class: 'btn btn-default btn-ghost center', onclick: 'install()'}).text('Install');
+  let installButton = $('<button>', {class: 'btn btn-default btn-ghost center', onclick: installFunction}).text(installText);
   $('#container').append([
     allButton,
     installButton
