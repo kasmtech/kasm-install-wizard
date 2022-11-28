@@ -25,6 +25,8 @@ var EULA;
 var images;
 var currentVersion;
 var gpuInfo;
+var installSettings = {};
+var upgradeSettings = {};
 // Grab installer variables
 async function installerBlobs() {
   EULA = await fsw.readFile('/kasm_release/licenses/LICENSE.txt', 'utf8');
