@@ -39,10 +39,21 @@ async function installerBlobs() {
     gpuData.push(data);
   });
   gpuCmd.on('close', function(code) {
-    if (code == 0) {
-      gpuInfo = JSON.parse(gpuData.join(''));
-    } else {
+    try {
+      if (code == 0) {
+        gpuInfo = JSON.parse(gpuData.join(''));
+      } else {
+        gpuInfo = {};
+      }
+    } catch (err) {
+      // Manually backfill GPU info if available
       gpuInfo = {};
+      for (let i = 0; i < 10; i++) {
+        let num = i.toString();
+        if (fs.existsSync('/dev/dri/card' + num)) {
+          gpuInfo['/dev/dri/card' + num] = "Unknown GPU";
+        }
+      }
     }
   });
 }
