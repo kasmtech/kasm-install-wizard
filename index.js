@@ -60,7 +60,7 @@ async function installerBlobs() {
 installerBlobs();
 
 // GPU image yaml merging
-async function setGpu(imagesD) {
+async function setGpu(imagesI) {
   if (upgradeSettings['forceGpu'] !== undefined) {
     installSettings = upgradeSettings;
   }
@@ -73,24 +73,17 @@ async function setGpu(imagesD) {
   if (gpuName.indexOf('NVIDIA') !== -1) {
     baseRun = JSON.parse('{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"],"device_requests":[{"driver": "","count": -1,"device_ids": null,"capabilities":[["gpu"]],"options":{}}]}');
   } else {
-    baseRun = JSON.parse('{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}');
+    baseRun = JSON.parse('{"environment":{"DRINODE":"/dev/dri/renderD' + render + '", "HW3D": true},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}');
   }
   let baseExec = JSON.parse('{"first_launch":{"user":"root","cmd": "bash -c \'chown -R kasm-user:kasm-user /dev/dri/*\'"}}');
-  for await (let image of Object.keys(images.images)) {
-    if (imagesD.images[image]['run_config']) {
-      finalRun = _.merge(JSON.parse(imagesD.images[image]['run_config']), baseRun)
-    } else {
-      finalRun = baseRun;
-    }
-    if (imagesD.images[image]['exec_config']) {
-      finalExec = _.merge(JSON.parse(imagesD.images[image]['exec_config']), baseExec)
-    } else {
-      finalExec = baseExec;
-    }
-    imagesD.images[image]['run_config'] = JSON.stringify(finalRun);
-    imagesD.images[image]['exec_config'] = JSON.stringify(finalExec);
+  for (var i=0; i<imagesI.images.length; i++) {
+    console.log(imagesI.images[i]['run_config']);
+    finalRun = _.merge(imagesI.images[i]['run_config'], baseRun)
+    finalExec = _.merge(imagesI.images[i]['exec_config'], baseExec)
+    imagesI.images[i]['run_config'] = finalRun;
+    imagesI.images[i]['exec_config'] = finalExec;
   }
-  return imagesD;
+  return imagesI;
 }
 
 //// Http server ////
@@ -111,37 +104,19 @@ io.on('connection', async function (socket) {
   async function install(data) {
     // Determine install settings
     installSettings = data[0];
-    let imagesI = data[1];
-    let imagesD = images;
-    installFlags = ['/kasm_release/install.sh', '-A', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
-    if (installSettings.useRolling == true) {
-      installFlags.push('-O');
-    }
-    if ((installSettings.noDownload == true) || (imagesI == false)) {
-      installFlags.push('-u');
-    }
-    if ((imagesI.hasOwnProperty('images')) && (Object.keys(imagesI.images).length < 10)) {
+    var imagesI = data[1];
+    installFlags = ['/kasm_release/install.sh', '-W', '-A', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
+    if ((imagesI.hasOwnProperty('images')) && (imagesI.images.length < 10)) {
       installFlags.push('-b');
-    }
-
-    // Flag the images properly based on selection
-    for await (let image of Object.keys(images.images)) {
-      if ((imagesI.hasOwnProperty('images')) && (imagesI.images.hasOwnProperty(image))) {
-        imagesD.images[image].enabled = true;
-        imagesD.images[image].hidden = false;
-      } else {
-        imagesD.images[image].enabled = false;
-        imagesD.images[image].hidden = true;
-      }
     }
 
     // GPU yaml merge
     if (installSettings.forceGpu !== 'disabled') {
-      imagesD = await setGpu(imagesD);
+      imagesI = await setGpu(imagesI);
     }
 
     // Write finalized image data
-    let yamlStr = yaml.dump(imagesD);
+    let yamlStr = yaml.dump(imagesI);
     await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
 
     // Copy over version
@@ -163,8 +138,7 @@ io.on('connection', async function (socket) {
   async function upgrade(data) {
     // Determine upgrade settings
     upgradeSettings = data[0];
-    let imagesI = data[1];
-    let imagesD = images;
+    var imagesI = data[1];
     upgradeFlags = ['/kasm_release/upgrade.sh', '-A', '-L', port];
     if (upgradeSettings.keepOldImages == true) {
       upgradeFlags.push('-K');
@@ -172,24 +146,13 @@ io.on('connection', async function (socket) {
       upgradeFlags.push('-U');
     }
 
-    // Flag the images properly based on selection
-    for await (let image of Object.keys(images.images)) {
-      if ((imagesI.hasOwnProperty('images')) && (imagesI.images.hasOwnProperty(image))) {
-        imagesD.images[image].enabled = true;
-        imagesD.images[image].hidden = false;
-      } else {
-        imagesD.images[image].enabled = false;
-        imagesD.images[image].hidden = true;
-      }
-    }
-
     // GPU yaml merge
     if (upgradeSettings.forceGpu !== 'disabled') {
-      imagesD = await setGpu(imagesD);
+      imagesI = await setGpu(imagesI);
     }
 
     // Write finalized image data
-    let yamlStr = yaml.dump(imagesD);
+    let yamlStr = yaml.dump(imagesI);
     await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
 
     // Copy over version

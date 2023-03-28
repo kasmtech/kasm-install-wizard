@@ -27,15 +27,15 @@ async function install() {
   showTerminal()
   titleChange('Installing');
   // Create new object based on image selection
-  let selectedImages = {images: {}};
+  let selectedImages = {alembic_version: images.alembic_version, images: [], group_images: []};
   if (installImages.length == 0) {
     socket.emit('install', [installSettings, false]);
   } else {
     for await (let image of installImages) {
-      if (images.images[image].hasOwnProperty('enabled')) {
-        images.images[image].enabled = true;
-      }
-      Object.assign(selectedImages.images, {[image]: images.images[image]});
+      let srcImage = images.images.find(x => x.friendly_name === image);
+      srcImage['enabled'] = true;
+      selectedImages.images.push(srcImage);
+      selectedImages.group_images.push({image_id: srcImage.image_id, group_id: "68d557ac-4cac-42cc-a9f3-1c7c853de0f3"});
     }
     socket.emit('install', [installSettings, selectedImages]);
   }
@@ -46,15 +46,15 @@ async function upgrade() {
   showTerminal()
   titleChange('Upgrading');
   // Create new object based on image selection
-  let selectedImages = {images: {}};
+  let selectedImages = {alembic_version: images.alembic_version, images: [], group_images: []};
   if (installImages.length == 0) {
     socket.emit('upgrade', [upgradeSettings, false]);
   } else {
     for await (let image of installImages) {
-      if (images.images[image].hasOwnProperty('enabled')) {
-        images.images[image].enabled = true;
-      }
-      Object.assign(selectedImages.images, {[image]: images.images[image]});
+      let srcImage = images.images.find(x => x.friendly_name === image);
+      srcImage['enabled'] = true;
+      selectedImages.images.push(srcImage);
+      selectedImages.group_images.push({image_id: srcImage.image_id, group_id: "68d557ac-4cac-42cc-a9f3-1c7c853de0f3"});
     }
     socket.emit('upgrade', [upgradeSettings, selectedImages]);
   }
@@ -228,14 +228,6 @@ async function pickSettings() {
     $('<label>', {for: 'userPass'}).text('user@kasm.local Password: '),
     $('<input>', {name: 'userPass', id: 'userPass', type: 'password', placeholder: 'required'}).prop('required',true)
   ]);
-  let useRolling = $('<div>', {class: 'form-group'}).append([
-    $('<label>', {for: 'useRolling'}).text('Use Rolling Images: '),
-    $('<input>', {name: 'useRolling', id: 'useRolling', type: 'checkbox'})
-  ]);
-  let noDownload = $('<div>', {class: 'form-group'}).append([
-    $('<label>', {for: 'noDownload'}).text('Skip Image Download: '),
-    $('<input>', {name: 'noDownload', id: 'noDownload', type: 'checkbox'})
-  ]);
   let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
   for await (let card of Object.keys(gpus)) {
     gpuOptions.push($('<option>', {value: card + '|' + gpus[card]}).text(card + ' - ' + gpus[card]));
@@ -250,8 +242,6 @@ async function pickSettings() {
   fieldset.append([
     adminPass,
     userPass,
-    useRolling,
-    noDownload,
     forceGpu,
     submit
   ]);
@@ -262,8 +252,6 @@ async function pickSettings() {
     e.preventDefault();
     installSettings.adminPass = $('#adminPass').val();
     installSettings.userPass = $('#userPass').val();
-    installSettings.useRolling = $('#useRolling').is(":checked");
-    installSettings.noDownload = $('#noDownload').is(":checked");
     installSettings.forceGpu = $('#forceGpu').val();
     pickImages(false);
   });
@@ -323,15 +311,15 @@ async function pickImages(upgrade) {
   titleChange('Image Selection');
   let imagesDiv = $('<div>', {class: 'cardcontainer', id: 'images'});
   $('#container').append(imagesDiv);
-  for await (let image of Object.keys(images.images).sort(Intl.Collator().compare)) {
-    let imageName = $('<p>').text(image);
+  for await (let image of images.images) {
+    let imageName = $('<p>').text(image.friendly_name);
     let imageDiv = $('<div>', {
       class: 'card',
-      id: image.replace(new RegExp(' ', 'g'), '_'),
-      title: images.images[image].description,
-      onclick: 'selectImage(\'' + image.replace(new RegExp(' ', 'g'), '_') + '\')'
+      id: image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-'),
+      title: image.description,
+      onclick: 'selectImage(\'' + image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-') + '\')'
     }).append(imageName).css('filter', 'grayscale(100%)')
-    let thumb = $('<img>', {class: 'thumb', src: 'public/' + images.images[image].image_src});
+    let thumb = $('<img>', {class: 'thumb', src: 'public/' + image.image_src});
     imageDiv.append(thumb);
     $('#images').append(imageDiv);
   }
@@ -345,7 +333,7 @@ async function pickImages(upgrade) {
 
 // Select an individual image
 function selectImage(image) {
-  let imageKey = image.replace(new RegExp('_', 'g'), ' ');
+  let imageKey = image.replace(new RegExp('_', 'g'), ' ').replace('-', '.');
   if (installImages.includes(imageKey)) {
     installImages = installImages.filter(e => e !== imageKey)
     $('#' + image).css({
@@ -366,8 +354,8 @@ function selectAll() {
   installImages = [];
   if (selected) {
     selected = false;
-    for (let image of Object.keys(images.images)) {
-      let imageElem = image.replace(new RegExp(' ', 'g'), '_');
+    for (let image of images.images) {
+      let imageElem = image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-');
       $('#' + imageElem).css({
         filter: 'grayscale(100%)',
         background: ''
@@ -375,9 +363,9 @@ function selectAll() {
     }
   } else {
     selected = true;
-    for (let image of Object.keys(images.images)) {
-      let imageElem = image.replace(new RegExp(' ', 'g'), '_');
-      installImages.push(image);
+    for (let image of images.images) {
+      let imageElem = image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-');
+      installImages.push(image.friendly_name);
       $('#' + imageElem).css({
         filter: '',
         background: '#89cff0'
