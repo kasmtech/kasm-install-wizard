@@ -117,7 +117,11 @@ io.on('connection', async function (socket) {
 
     // Write finalized image data
     let yamlStr = yaml.dump(imagesI);
-    await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
+    if (yamlStr.startsWith("false")) {
+      installFlags = installFlags.filter(function(e) { return e !== '-W' });
+    } else {
+      await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
+    }
 
     // Copy over version
     await fsw.copyFile('/version.txt', '/opt/version.txt');
@@ -153,7 +157,12 @@ io.on('connection', async function (socket) {
 
     // Write finalized image data
     let yamlStr = yaml.dump(imagesI);
-    await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
+    if (yamlStr.startsWith("false")) {
+      upgradeFlags = upgradeFlags.filter(function(e) { return e !== '-K' });
+      upgradeFlags = upgradeFlags.filter(function(e) { return e !== '-U' });
+    } else {
+      await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
+    }
 
     // Copy over version
     await fsw.copyFile('/version.txt', '/opt/version.txt');
