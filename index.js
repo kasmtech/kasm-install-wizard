@@ -105,7 +105,7 @@ io.on('connection', async function (socket) {
     // Determine install settings
     installSettings = data[0];
     var imagesI = data[1];
-    installFlags = ['/kasm_release/install.sh', '-W', '-A', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
+    installFlags = ['/kasm_release/install.sh', '-W', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
     if ((imagesI.hasOwnProperty('images')) && (imagesI.images.length < 10)) {
       installFlags.push('-b');
     }
@@ -143,7 +143,7 @@ io.on('connection', async function (socket) {
     // Determine upgrade settings
     upgradeSettings = data[0];
     var imagesI = data[1];
-    upgradeFlags = ['/kasm_release/upgrade.sh', '-A', '-L', port];
+    upgradeFlags = ['/kasm_release/upgrade.sh', '-L', port];
     if (upgradeSettings.keepOldImages == true) {
       upgradeFlags.push('-K');
     } else {
