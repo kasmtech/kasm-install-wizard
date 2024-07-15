@@ -71,7 +71,7 @@ async function setGpu(imagesI) {
   // Handle NVIDIA Gpus
   var baseRun;
   if (gpuName.indexOf('NVIDIA') !== -1) {
-    baseRun = JSON.parse('{"environment":{"KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"],"device_requests":[{"driver": "","count": -1,"device_ids": null,"capabilities":[["gpu"]],"options":{}}]}');
+    baseRun = JSON.parse('{"runtime":"nvidia","environment":{"NVIDIA_DRIVER_CAPABILITIES":"all","KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"device_requests":[{"driver": "","count": -1,"device_ids": null,"capabilities":[["gpu"]],"options":{}}]}');
   } else {
     baseRun = JSON.parse('{"environment":{"DRINODE":"/dev/dri/renderD' + render + '", "HW3D": true},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}');
   }
@@ -105,7 +105,7 @@ io.on('connection', async function (socket) {
     // Determine install settings
     installSettings = data[0];
     var imagesI = data[1];
-    installFlags = ['/kasm_release/install.sh', '-W', '-A', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
+    installFlags = ['/kasm_release/install.sh', '-W', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
     if ((imagesI.hasOwnProperty('images')) && (imagesI.images.length < 10)) {
       installFlags.push('-b');
     }
@@ -143,7 +143,7 @@ io.on('connection', async function (socket) {
     // Determine upgrade settings
     upgradeSettings = data[0];
     var imagesI = data[1];
-    upgradeFlags = ['/kasm_release/upgrade.sh', '-A', '-L', port];
+    upgradeFlags = ['/kasm_release/upgrade.sh', '-L', port];
     if (upgradeSettings.keepOldImages == true) {
       upgradeFlags.push('-K');
     } else {
