@@ -111,7 +111,7 @@ io.on('connection', async function (socket) {
     }
 
     // GPU yaml merge
-    if (installSettings.forceGpu !== 'disabled') {
+    if (installSettings.forceGpu !== 'disabled' && imagesI.images) {
       imagesI = await setGpu(imagesI);
     }
 
@@ -151,7 +151,7 @@ io.on('connection', async function (socket) {
     }
 
     // GPU yaml merge
-    if (upgradeSettings.forceGpu !== 'disabled') {
+    if (upgradeSettings.forceGpu !== 'disabled'  && imagesI.images) {
       imagesI = await setGpu(imagesI);
     }
 
