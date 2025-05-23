@@ -334,15 +334,16 @@ async function pickImages(upgrade) {
 // Select an individual image
 function selectImage(image) {
   let imageKey = image.replace(new RegExp('_', 'g'), ' ').replace('-', '.');
+  let safeSelectorId = $.escapeSelector(image); // Escape the ID for jQuery
   if (installImages.includes(imageKey)) {
     installImages = installImages.filter(e => e !== imageKey)
-    $('#' + image).css({
+    $('#' + safeSelectorId).css({
       filter: 'grayscale(100%)',
       background: ''
     });
   } else {
     installImages.push(imageKey);
-    $('#' + image).css({
+    $('#' + safeSelectorId).css({
       filter: '',
       background: '#89cff0'
     });
@@ -356,7 +357,8 @@ function selectAll() {
     selected = false;
     for (let image of images.images) {
       let imageElem = image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-');
-      $('#' + imageElem).css({
+      let safeSelectorId = $.escapeSelector(imageElem); // Escape the ID for jQuery
+      $('#' + safeSelectorId).css({
         filter: 'grayscale(100%)',
         background: ''
       });
@@ -365,8 +367,9 @@ function selectAll() {
     selected = true;
     for (let image of images.images) {
       let imageElem = image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-');
+      let safeSelectorId = $.escapeSelector(imageElem); // Escape the ID for jQuery
       installImages.push(image.friendly_name);
-      $('#' + imageElem).css({
+      $('#' + safeSelectorId).css({
         filter: '',
         background: '#89cff0'
       });
