@@ -1,9 +1,11 @@
 // Variables
 var EULA;
 var images;
+var gpus;
 var term;
 var installImages = [];
 var installSettings = {};
+var upgradeSettings = {};
 var selected = false;
 
 // Socket.io connection
@@ -25,17 +27,36 @@ async function install() {
   showTerminal()
   titleChange('Installing');
   // Create new object based on image selection
-  let selectedImages = {images: {}};
+  let selectedImages = {alembic_version: images.alembic_version, images: [], group_images: []};
   if (installImages.length == 0) {
     socket.emit('install', [installSettings, false]);
   } else {
     for await (let image of installImages) {
-      if (images.images[image].hasOwnProperty('enabled')) {
-        images.images[image].enabled = true;
-      }
-      Object.assign(selectedImages.images, {[image]: images.images[image]});
+      let srcImage = images.images.find(x => x.friendly_name === image);
+      srcImage['enabled'] = true;
+      selectedImages.images.push(srcImage);
+      selectedImages.group_images.push({image_id: srcImage.image_id, group_id: "68d557ac-4cac-42cc-a9f3-1c7c853de0f3"});
     }
     socket.emit('install', [installSettings, selectedImages]);
+  }
+}
+
+// Execute upgrade
+async function upgrade() {
+  showTerminal()
+  titleChange('Upgrading');
+  // Create new object based on image selection
+  let selectedImages = {alembic_version: images.alembic_version, images: [], group_images: []};
+  if (installImages.length == 0) {
+    socket.emit('upgrade', [upgradeSettings, false]);
+  } else {
+    for await (let image of installImages) {
+      let srcImage = images.images.find(x => x.friendly_name === image);
+      srcImage['enabled'] = true;
+      selectedImages.images.push(srcImage);
+      selectedImages.group_images.push({image_id: srcImage.image_id, group_id: "68d557ac-4cac-42cc-a9f3-1c7c853de0f3"});
+    }
+    socket.emit('upgrade', [upgradeSettings, selectedImages]);
   }
 }
 
@@ -73,6 +94,7 @@ function renderInstall(data) {
   titleChange('EULA');
   EULA = data[0];
   images = data[1];
+  gpus = data[2];
   let EULADiv = $('<div>', {id: 'EULA'}).text(EULA);
   $('#container').append(EULADiv);
   let EULAButton = $('<button>', {id: 'EULAButton', onclick: 'pickSettings()', class: 'btn btn-default btn-ghost'}).text('Accept and continue');
@@ -80,15 +102,34 @@ function renderInstall(data) {
 }
 
 // Render Dashboard
-async function renderDash(info) {
+async function renderDash(data) {
   showContainer();
   titleChange('Dashboard');
+  let info = data[0];
+  images = data[1];
+  // Store GPU info
+  $('body').data('gpuInfo', info.gpuInfo);
+  // Upgrade button if needed
+  var upgrade;
+  if (info.currentVersion !== info.localVersion) {
+    upgrade = $('<button>', {class: 'btn btn-primary', onclick: 'renderUpgrade()'}).text('Upgrade to ' + info.currentVersion)
+  } else {
+    upgrade = info.currentVersion;
+  }
   // Kasm docker containers
   containersTable = $('<tbody>');
   containersTable.append(
     $('<tr>').append([
       $('<th>').text('Web URL'),
       $('<td>').append($('<a>', {href: 'https://' + host + ':' + info.port, target: '_blank'}).text('https://' + host + ':' + info.port))
+    ]),
+    $('<tr>').append([
+      $('<th>').text('Installed Version'),
+      $('<td>').text(info.localVersion)
+    ]),
+    $('<tr>').append([
+      $('<th>').text('Current Version'),
+      $('<td>').append(upgrade)
     ])
   );
   for await (let container of info.containers) {
@@ -187,13 +228,13 @@ async function pickSettings() {
     $('<label>', {for: 'userPass'}).text('user@kasm.local Password: '),
     $('<input>', {name: 'userPass', id: 'userPass', type: 'password', placeholder: 'required'}).prop('required',true)
   ]);
-  let useRolling = $('<div>', {class: 'form-group'}).append([
-    $('<label>', {for: 'useRolling'}).text('Use Rolling Images: '),
-    $('<input>', {name: 'useRolling', id: 'useRolling', type: 'checkbox'})
-  ]);
-  let noDownload = $('<div>', {class: 'form-group'}).append([
-    $('<label>', {for: 'noDownload'}).text('Skip Image Download: '),
-    $('<input>', {name: 'noDownload', id: 'noDownload', type: 'checkbox'})
+  let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
+  for await (let card of Object.keys(gpus)) {
+    gpuOptions.push($('<option>', {value: card + '|' + gpus[card]}).text(card + ' - ' + gpus[card]));
+  }
+  let forceGpu = $('<div>', {class: 'form-group'}).append([
+    $('<label>', {for: 'forceGpu'}).text('Use GPU on all images: '),
+    $('<select>', {name: 'forceGpu', id: 'forceGpu',}).append(gpuOptions)
   ]);
   let submit = $('<div>', {class: 'form-group'}).append([
     $('<input>', {name: 'submit', type: 'submit', value: 'Next', class: 'btn btn-default btn-ghost'})
@@ -201,8 +242,7 @@ async function pickSettings() {
   fieldset.append([
     adminPass,
     userPass,
-    useRolling,
-    noDownload,
+    forceGpu,
     submit
   ]);
   form.append(fieldset);
@@ -212,34 +252,79 @@ async function pickSettings() {
     e.preventDefault();
     installSettings.adminPass = $('#adminPass').val();
     installSettings.userPass = $('#userPass').val();
-    installSettings.useRolling = $('#useRolling').is(":checked");
-    installSettings.noDownload = $('#noDownload').is(":checked");
-    pickImages();
+    installSettings.forceGpu = $('#forceGpu').val();
+    pickImages(false);
+  });
+}
+
+// Render upgrade form
+async function renderUpgrade() {
+  showContainer();
+  let gpus = $('body').data('gpuInfo');
+  titleChange('Upgrade Settings');
+  let form = $('<form>', {id: 'settingsform'});
+  let fieldset = $('<fieldset>').append($('<legend>').text('Kasm Upgrade Settings'));
+  let keepOldImages = $('<div>', {class: 'form-group'}).append([
+    $('<label>', {for: 'keepOldImages'}).text('Do not purge existing images: '),
+    $('<input>', {name: 'keepOldImages', id: 'keepOldImages', type: 'checkbox'})
+  ]);
+  let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
+  for await (let card of Object.keys(gpus)) {
+    gpuOptions.push($('<option>', {value: card + '|' + gpus[card]}).text(card + ' - ' + gpus[card]));
+  }
+  let forceGpu = $('<div>', {class: 'form-group'}).append([
+    $('<label>', {for: 'forceGpu'}).text('Use GPU on all new images: '),
+    $('<select>', {name: 'forceGpu', id: 'forceGpu',}).append(gpuOptions)
+  ]);
+  let submit = $('<div>', {class: 'form-group'}).append([
+    $('<input>', {name: 'submit', type: 'submit', value: 'Next', class: 'btn btn-default btn-ghost'})
+  ]);
+  fieldset.append([
+    keepOldImages,
+    forceGpu,
+    submit
+  ]);
+  form.append(fieldset);
+  $('#container').append(form);
+  // Grab data and move to image selection
+  form.on('submit', function (e) {
+    e.preventDefault();
+    upgradeSettings.keepOldImages = $('#keepOldImages').is(":checked");
+    upgradeSettings.forceGpu = $('#forceGpu').val();
+    pickImages(true);
   });
 }
 
 
-
 // Render image selection
-async function pickImages() {
+async function pickImages(upgrade) {
+  var installText;
+  var installFunction;
+  if (upgrade) {
+    installText = 'Upgrade';
+    installFunction = 'upgrade()';
+  } else {
+    installText = 'Install';
+    installFunction = 'install()';
+  }
   showContainer();
   titleChange('Image Selection');
   let imagesDiv = $('<div>', {class: 'cardcontainer', id: 'images'});
   $('#container').append(imagesDiv);
-  for await (let image of Object.keys(images.images).sort(Intl.Collator().compare)) {
-    let imageName = $('<p>').text(image);
+  for await (let image of images.images) {
+    let imageName = $('<p>').text(image.friendly_name);
     let imageDiv = $('<div>', {
       class: 'card',
-      id: image.replace(new RegExp(' ', 'g'), '_'),
-      title: images.images[image].description,
-      onclick: 'selectImage(\'' + image.replace(new RegExp(' ', 'g'), '_') + '\')'
+      id: image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-'),
+      title: image.description,
+      onclick: 'selectImage(\'' + image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-') + '\')'
     }).append(imageName).css('filter', 'grayscale(100%)')
-    let thumb = $('<img>', {class: 'thumb', src: 'public/' + images.images[image].image_src});
+    let thumb = $('<img>', {class: 'thumb', src: 'public/' + image.image_src});
     imageDiv.append(thumb);
     $('#images').append(imageDiv);
   }
   let allButton = $('<button>', {class: 'btn btn-default btn-ghost center', onclick: 'selectAll()'}).text('Select All');
-  let installButton = $('<button>', {class: 'btn btn-default btn-ghost center', onclick: 'install()'}).text('Install');
+  let installButton = $('<button>', {class: 'btn btn-default btn-ghost center', onclick: installFunction}).text(installText);
   $('#container').append([
     allButton,
     installButton
@@ -248,7 +333,7 @@ async function pickImages() {
 
 // Select an individual image
 function selectImage(image) {
-  let imageKey = image.replace(new RegExp('_', 'g'), ' ');
+  let imageKey = image.replace(new RegExp('_', 'g'), ' ').replace('-', '.');
   if (installImages.includes(imageKey)) {
     installImages = installImages.filter(e => e !== imageKey)
     $('#' + image).css({
@@ -269,8 +354,8 @@ function selectAll() {
   installImages = [];
   if (selected) {
     selected = false;
-    for (let image of Object.keys(images.images)) {
-      let imageElem = image.replace(new RegExp(' ', 'g'), '_');
+    for (let image of images.images) {
+      let imageElem = image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-');
       $('#' + imageElem).css({
         filter: 'grayscale(100%)',
         background: ''
@@ -278,9 +363,9 @@ function selectAll() {
     }
   } else {
     selected = true;
-    for (let image of Object.keys(images.images)) {
-      let imageElem = image.replace(new RegExp(' ', 'g'), '_');
-      installImages.push(image);
+    for (let image of images.images) {
+      let imageElem = image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-');
+      installImages.push(image.friendly_name);
       $('#' + imageElem).css({
         filter: '',
         background: '#89cff0'
