@@ -24,15 +24,100 @@ const { spawn } = require('node:child_process');
 var EULA;
 var images;
 var currentVersion;
+var sourceLocal = false;
 var gpuInfo;
 var installSettings = {};
 var upgradeSettings = {};
+
+// Find the best matching compatibility entry for the current version.
+// Exact version match takes precedence over wildcard (e.g. "1.18.x").
+function matchVersion(currentVer, compatibilityList) {
+  if (!compatibilityList || compatibilityList.length === 0) return null;
+  const parts = currentVer.split('.');
+  const major = parts[0];
+  const minor = parts[1] !== undefined ? parts[1] : '0';
+
+  // Exact match (most precise)
+  let match = compatibilityList.find(c => c.version === currentVer);
+  if (match) return match;
+
+  // Major.minor wildcard, e.g. "1.18.x"
+  match = compatibilityList.find(c => c.version === `${major}.${minor}.x`);
+  if (match) return match;
+
+  return null;
+}
+
+// Fetch workspace list from registry and convert to the images YAML structure.
+// Falls back to local list.json if the remote is unavailable.
+async function fetchWorkspaceList(currentVer, archName) {
+  let listData;
+  try {
+    const response = await fetch('https://registry.kasmweb.com/1.1/list.json');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    listData = await response.json();
+  } catch (err) {
+    console.error('Failed to fetch workspace list, falling back to local list.json:', err.message);
+    let localList = await fsw.readFile('/wizard/list.json', 'utf8');
+    listData = JSON.parse(localList);
+    sourceLocal = true;
+  }
+
+  const defaultChannel = listData.default_channel;
+  const filtered = (listData.workspaces || []).filter(
+    ws => ws.architecture && ws.architecture.includes(archName)
+  );
+
+  let imageIdx = 1;
+  const imagesList = [];
+  for (const ws of filtered) {
+    const compat = matchVersion(currentVer, ws.compatibility || []);
+    if (!compat) continue;
+
+    // Use default_channel tag if it exists in available_tags, otherwise keep compat image tag
+    let imageName = compat.image;
+    const imageBase = imageName.split(':')[0];
+    if (defaultChannel && compat.available_tags && compat.available_tags.includes(defaultChannel)) {
+      imageName = imageBase + ':' + defaultChannel;
+    }
+
+    imagesList.push({
+      categories: ws.categories,
+      cores: 2.0,
+      cpu_allocation_method: 'Inherit',
+      description: ws.description,
+      docker_registry: ws.docker_registry,
+      enabled: true,
+      exec_config: {},
+      friendly_name: ws.friendly_name,
+      gpu_count: 0,
+      hidden: false,
+      image_id: '${uuid:image_id:' + imageIdx + '}',
+      image_src: 'https://registry.kasmweb.com/1.1/icons/' + ws.image_src,
+      image_type: 'Container',
+      launch_config: {},
+      memory: 2768000000,
+      name: imageName,
+      notes: ws.notes || null,
+      run_config: {},
+      uncompressed_size_mb: compat.uncompressed_size_mb,
+      zone_id: null
+    });
+    imageIdx++;
+  }
+
+  return { alembic_version: 'e3900d8a4fee', images: imagesList };
+}
+
 // Grab installer variables
 async function installerBlobs() {
   EULA = await fsw.readFile('/kasm_release/licenses/LICENSE.txt', 'utf8');
-  let imagesText = await fsw.readFile('/wizard/default_images_' + arch + '.yaml', 'utf8');
-  images = yaml.load(imagesText);
-  currentVersion = fs.readFileSync('/version.txt', 'utf8').replace(/(\r\n|\n|\r)/gm,'');
+  try {
+    currentVersion = fs.readFileSync('/version.txt', 'utf8').replace(/(\r\n|\n|\r)/gm,'');
+  } catch (err) {
+    currentVersion = '1.18.1!';
+  }
+  images = await fetchWorkspaceList(currentVersion, arch);
   let gpuData = [];
   let gpuCmd = spawn('/gpuinfo.sh');
   gpuCmd.stdout.on('data', function(data) {
@@ -192,6 +277,7 @@ io.on('connection', async function (socket) {
         dashinfo['localVersion'] = 'Unknown';
       }
       dashinfo['currentVersion'] = currentVersion;
+      dashinfo['sourceLocal'] = sourceLocal;
       dashinfo['gpuInfo'] = gpuInfo;
       dashinfo['containers'] = containers;
       dashinfo['cpu'] = await si.cpu();
@@ -201,7 +287,7 @@ io.on('connection', async function (socket) {
       socket.emit('renderdash', [dashinfo, images]);
     // Render installer
     } else {
-      socket.emit('renderinstall', [EULA, images, gpuInfo]);
+      socket.emit('renderinstall', [EULA, images, gpuInfo, currentVersion, sourceLocal]);
     }
   }
   // Disable wizard

@@ -88,6 +88,10 @@ function titleChange(value) {
   $('#title').text(value);
 }
 
+function versionChange(ver, local) {
+  document.title = 'Kasm Wizard ' + ver + (local ? ' (local)' : '');
+}
+
 // Render landing as installer page
 function renderInstall(data) {
   showContainer();
@@ -95,6 +99,7 @@ function renderInstall(data) {
   EULA = data[0];
   images = data[1];
   gpus = data[2];
+  versionChange(data[3], data[4]);
   let EULADiv = $('<div>', {id: 'EULA'}).text(EULA);
   $('#container').append(EULADiv);
   let EULAButton = $('<button>', {id: 'EULAButton', onclick: 'pickSettings()', class: 'btn btn-default btn-ghost'}).text('Accept and continue');
@@ -107,6 +112,7 @@ async function renderDash(data) {
   titleChange('Dashboard');
   let info = data[0];
   images = data[1];
+  versionChange(info.currentVersion, info.sourceLocal);
   // Store GPU info
   $('body').data('gpuInfo', info.gpuInfo);
   // Upgrade button if needed
@@ -319,7 +325,7 @@ async function pickImages(upgrade) {
       title: image.description,
       onclick: 'selectImage(\'' + image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-') + '\')'
     }).append(imageName).css('filter', 'grayscale(100%)')
-    let thumb = $('<img>', {class: 'thumb', src: 'public/' + image.image_src});
+    let thumb = $('<img>', {class: 'thumb', src: image.image_src, loading: 'lazy'});
     imageDiv.append(thumb);
     $('#images').append(imageDiv);
   }
