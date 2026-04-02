@@ -63,7 +63,6 @@ async function fetchWorkspaceList(currentVer, archName) {
     sourceLocal = true;
   }
 
-  const defaultChannel = listData.default_channel;
   const filtered = (listData.workspaces || []).filter(
     ws => ws.architecture && ws.architecture.includes(archName)
   );
@@ -74,12 +73,14 @@ async function fetchWorkspaceList(currentVer, archName) {
     const compat = matchVersion(currentVer, ws.compatibility || []);
     if (!compat) continue;
 
-    // Use default_channel tag if it exists in available_tags, otherwise keep compat image tag
-    let imageName = compat.image;
-    const imageBase = imageName.split(':')[0];
-    if (defaultChannel && compat.available_tags && compat.available_tags.includes(defaultChannel)) {
-      imageName = imageBase + ':' + defaultChannel;
-    }
+    // Build image tag: take the version prefix from the compat tag (e.g. "1.18.0" from
+    // "1.18.0-rolling-daily") and append "-rolling-weekly". Fall back to "develop".
+    const imageBase = compat.image.split(':')[0];
+    const compatTag = compat.image.split(':')[1] || '';
+    const versionPrefix = compatTag.replace(/-[^-]+-[^-]+$/, ''); // strip last two dash-segments
+    const candidate = versionPrefix + '-rolling-weekly';
+    let imageTag = (compat.available_tags && compat.available_tags.includes(candidate)) ? candidate : 'develop';
+    const imageName = imageBase + ':' + imageTag;
 
     imagesList.push({
       categories: ws.categories,
@@ -106,7 +107,16 @@ async function fetchWorkspaceList(currentVer, archName) {
     imageIdx++;
   }
 
-  return { alembic_version: 'e3900d8a4fee', images: imagesList };
+  let alembicVersion = 'e3900d8a4fee';
+  try {
+    const propsText = await fsw.readFile('/kasm_release/conf/database/seed_data/default_properties.yaml', 'utf8');
+    const props = yaml.load(propsText);
+    if (props && props.alembic_version) alembicVersion = props.alembic_version;
+  } catch (err) {
+    console.error('Could not read default_properties.yaml, using hardcoded alembic_version:', err.message);
+  }
+
+  return { alembic_version: alembicVersion, images: imagesList };
 }
 
 // Grab installer variables
