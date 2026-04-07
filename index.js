@@ -181,6 +181,29 @@ async function setGpu(imagesI) {
   return imagesI;
 }
 
+// For rolling-weekly installs, append -rolling to service image tags in docker conf yamls.
+// Prevents -rolling-rolling by only modifying tags that don't already end with -rolling.
+async function appendRollingToServiceImages() {
+  const confDir = '/opt/kasm/docker/.conf';
+  let entries;
+  try {
+    entries = await fsw.readdir(confDir);
+  } catch (err) {
+    return;
+  }
+  for (const file of entries.filter(f => f.endsWith('.yaml'))) {
+    const filePath = confDir + '/' + file;
+    const content = await fsw.readFile(filePath, 'utf8');
+    const updated = content.split('\n').map(line => {
+      if (/ image:/.test(line) && /"$/.test(line) && !/-rolling"$/.test(line) && !/develop"$/.test(line)) {
+        return line.replace(/"$/, '-rolling"');
+      }
+      return line;
+    }).join('\n');
+    await fsw.writeFile(filePath, updated);
+  }
+}
+
 //// Http server ////
 baserouter.use('/public', express.static(__dirname + '/public'));
 baserouter.get("/", function (req, res) {
@@ -216,6 +239,7 @@ io.on('connection', async function (socket) {
       installFlags = installFlags.filter(function(e) { return e !== '-W' });
     } else {
       await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
+      await appendRollingToServiceImages();
     }
 
     // Copy over version
@@ -257,6 +281,7 @@ io.on('connection', async function (socket) {
       upgradeFlags = upgradeFlags.filter(function(e) { return e !== '-U' });
     } else {
       await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
+      await appendRollingToServiceImages();
     }
 
     // Copy over version
