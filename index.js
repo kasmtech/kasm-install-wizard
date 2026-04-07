@@ -184,7 +184,7 @@ async function setGpu(imagesI) {
 // For rolling-weekly installs, append -rolling to service image tags in docker conf yamls.
 // Prevents -rolling-rolling by only modifying tags that don't already end with -rolling.
 async function appendRollingToServiceImages() {
-  const confDir = '/opt/kasm/docker/.conf';
+  const confDir = '/kasm_release/docker';
   let entries;
   try {
     entries = await fsw.readdir(confDir);
