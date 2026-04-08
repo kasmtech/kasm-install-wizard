@@ -259,33 +259,10 @@ io.on('connection', async function (socket) {
 
   // Run bash upgrade with our custom flags
   async function upgrade(data) {
-    // Determine upgrade settings
-    upgradeSettings = data[0];
-    var imagesI = data[1];
-    upgradeFlags = ['/kasm_release/upgrade.sh', '-L', port];
-    if (upgradeSettings.keepOldImages == true) {
-      upgradeFlags.push('-K');
-    } else {
-      upgradeFlags.push('-U');
-    }
+    upgradeFlags = ['/kasm_release/upgrade.sh', '-L', port, '-K'];
 
-    // GPU yaml merge
-    if (upgradeSettings.forceGpu !== 'disabled' && imagesI.images) {
-      imagesI = await setGpu(imagesI);
-    }
-
-    // Write finalized image data
-    let yamlStr = yaml.dump(imagesI);
-    if (yamlStr.startsWith("false")) {
-      upgradeFlags = upgradeFlags.filter(function(e) { return e !== '-K' });
-      upgradeFlags = upgradeFlags.filter(function(e) { return e !== '-U' });
-    } else {
-      await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
-      await appendRollingToServiceImages();
-    }
-
-    // Copy over version
-    await fsw.copyFile('/version.txt', '/opt/version.txt');
+    // Patch service image tags for rolling builds
+    await appendRollingToServiceImages();
 
     // Run upgrade
     let cmd = pty.spawn('/bin/bash', upgradeFlags);
@@ -294,6 +271,7 @@ io.on('connection', async function (socket) {
     });
     cmd.on('exit', function(code, signal) {
       if (code == 0) {
+        fsw.copyFile('/version.txt', '/opt/version.txt');
         socket.emit('done', port);
       }
     });

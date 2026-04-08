@@ -6,6 +6,8 @@ var term;
 var installImages = [];
 var installSettings = {};
 var upgradeSettings = {};
+var currentVersion = '';
+var isUpgrade = false;
 var selected = false;
 
 // Socket.io connection
@@ -43,21 +45,10 @@ async function install() {
 
 // Execute upgrade
 async function upgrade() {
-  showTerminal()
+  isUpgrade = true;
+  showTerminal();
   titleChange('Upgrading');
-  // Create new object based on image selection
-  let selectedImages = {alembic_version: images.alembic_version, images: [], group_images: []};
-  if (installImages.length == 0) {
-    socket.emit('upgrade', [upgradeSettings, false]);
-  } else {
-    for await (let image of installImages) {
-      let srcImage = images.images.find(x => x.friendly_name === image);
-      srcImage['enabled'] = true;
-      selectedImages.images.push(srcImage);
-      selectedImages.group_images.push({image_id: srcImage.image_id, group_id: "68d557ac-4cac-42cc-a9f3-1c7c853de0f3"});
-    }
-    socket.emit('upgrade', [upgradeSettings, selectedImages]);
-  }
+  socket.emit('upgrade', [upgradeSettings, false]);
 }
 
 // Show page container
@@ -112,6 +103,7 @@ async function renderDash(data) {
   titleChange('Dashboard');
   let info = data[0];
   images = data[1];
+  currentVersion = info.currentVersion;
   versionChange(info.currentVersion, info.sourceLocal);
   // Store GPU info
   $('body').data('gpuInfo', info.gpuInfo);
@@ -264,40 +256,25 @@ async function pickSettings() {
 }
 
 // Render upgrade form
-async function renderUpgrade() {
+function renderUpgrade() {
   showContainer();
-  let gpus = $('body').data('gpuInfo');
   titleChange('Upgrade Settings');
-  let form = $('<form>', {id: 'settingsform'});
   let fieldset = $('<fieldset>').append($('<legend>').text('Kasm Upgrade Settings'));
-  let keepOldImages = $('<div>', {class: 'form-group'}).append([
-    $('<label>', {for: 'keepOldImages'}).text('Do not purge existing images: '),
-    $('<input>', {name: 'keepOldImages', id: 'keepOldImages', type: 'checkbox'})
+  fieldset.append($('<p>').text('Are you sure you want to upgrade Kasm to version ' + currentVersion + '?'));
+  let confirmCheck = $('<div>', {class: 'form-group'}).append([
+    $('<label>', {for: 'confirmUpgrade'}).text('I confirm I want to upgrade'),
+    $('<input>', {name: 'confirmUpgrade', id: 'confirmUpgrade', type: 'checkbox'})
   ]);
-  let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
-  for await (let card of Object.keys(gpus)) {
-    gpuOptions.push($('<option>', {value: card + '|' + gpus[card]}).text(card + ' - ' + gpus[card]));
-  }
-  let forceGpu = $('<div>', {class: 'form-group'}).append([
-    $('<label>', {for: 'forceGpu'}).text('Use GPU on all new images: '),
-    $('<select>', {name: 'forceGpu', id: 'forceGpu',}).append(gpuOptions)
-  ]);
-  let submit = $('<div>', {class: 'form-group'}).append([
-    $('<input>', {name: 'submit', type: 'submit', value: 'Next', class: 'btn btn-default btn-ghost'})
-  ]);
-  fieldset.append([
-    keepOldImages,
-    forceGpu,
-    submit
-  ]);
-  form.append(fieldset);
-  $('#container').append(form);
-  // Grab data and move to image selection
-  form.on('submit', function (e) {
-    e.preventDefault();
-    upgradeSettings.keepOldImages = $('#keepOldImages').is(":checked");
-    upgradeSettings.forceGpu = $('#forceGpu').val();
-    pickImages(true);
+  fieldset.append(confirmCheck);
+  let upgradeButton = $('<button>', {
+    class: 'btn btn-default btn-ghost',
+    id: 'upgradeButton',
+    onclick: 'upgrade()',
+    disabled: true
+  }).text('Upgrade');
+  $('#container').append([$('<div>', {class: 'terminal-card', style: 'margin: 20px 0; border: none;'}).append(fieldset), upgradeButton]);
+  $('#confirmUpgrade').on('change', function() {
+    $('#upgradeButton').prop('disabled', !this.checked);
   });
 }
 
@@ -388,13 +365,18 @@ function done(port) {
   showContainer();
   titleChange('Complete');
   let titleBar = $('<div>');
-  titleBar.append($('<h2>', {class: 'center'}).text('Installation Complete'));
+  if (isUpgrade) {
+    titleBar.append($('<h2>', {class: 'center'}).text('Upgrade Complete'));
+    titleBar.append($('<h3>', {class: 'center'}).text('Remember to update your workspace image tags to :' + currentVersion + '-rolling-weekly'));
+  } else {
+    titleBar.append($('<h2>', {class: 'center'}).text('Installation Complete'));
+  }
   titleBar.append($('<h3>', {class: 'center'}).text('This page will reload in 5 seconds'));
   titleBar.append($('<h3>', {class: 'center'}).text('Your installation is available on port ' + port));
   $('#container').append(titleBar);
   setTimeout(function(){
     location.reload(true);
-  }, 5000); 
+  }, 5000);
 }
 
 //// Socket events ////
