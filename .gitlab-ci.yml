@@ -1,6 +1,4 @@
-image: docker
-services:
-  - docker:dind
+image: alpine
 
 variables:
   DOCKER_HOST: tcp://docker:2375
@@ -12,26 +10,29 @@ default:
     - oci-fixed-amd
 
 stages:
-  - upload
+  - update
 
-before_script:
-  - export SANITIZED_BRANCH="$(echo $CI_COMMIT_REF_NAME | sed -r 's#^release/##'  | sed 's/\//_/g')"
-
-push_to_s3:
-  stage: upload
+update_list_json:
+  stage: update
+  rules:
+    - if: '$CI_COMMIT_REF_NAME =~ /^release\//'
+      when: on_success
   script:
-    - apk add aws-cli curl gzip tar
-    - export S3_URL="https://${S3_BUCKET}.s3.amazonaws.com/wizard/${CI_COMMIT_SHA}.tar.gz"
+    - apk add curl git
     - |
-      if echo "$CI_COMMIT_REF_NAME" | grep -qE '^release/'; then
-        if curl -fsSL https://registry.kasmweb.com/1.1/list.json -o list.json.tmp; then
-          mv list.json.tmp list.json
+      if curl -fsSL https://registry.kasmweb.com/1.1/list.json -o list.json.tmp; then
+        mv list.json.tmp list.json
+        git config user.email "ci@gitlab"
+        git config user.name "GitLab CI"
+        git remote set-url origin "https://gitlab-ci-token:${CI_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+        git add list.json
+        if ! git diff --cached --quiet; then
+          git commit -m "chore: update list.json from registry [skip ci]"
+          git push origin HEAD:${CI_COMMIT_REF_NAME}
         else
-          echo "Failed to fetch list.json, using committed version"
-          rm -f list.json.tmp
+          echo "list.json unchanged, nothing to commit"
         fi
+      else
+        echo "Failed to fetch list.json, skipping update"
+        rm -f list.json.tmp
       fi
-    - tar -czf ${CI_COMMIT_SHA}.tar.gz *
-    - aws s3 cp ${CI_COMMIT_SHA}.tar.gz s3://${S3_BUCKET}/wizard/
-    - aws s3 cp ${CI_COMMIT_SHA}.tar.gz s3://${S3_BUCKET}/wizard/${SANITIZED_BRANCH}.tar.gz
-    - curl --request POST --header "PRIVATE-TOKEN:${GITLAB_API_TOKEN}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/statuses/${CI_COMMIT_SHA}?state=success&name=build-url&target_url=${S3_URL}"
