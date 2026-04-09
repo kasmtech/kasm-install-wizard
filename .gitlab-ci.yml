@@ -22,6 +22,15 @@ push_to_s3:
   script:
     - apk add aws-cli curl gzip tar
     - export S3_URL="https://${S3_BUCKET}.s3.amazonaws.com/wizard/${CI_COMMIT_SHA}.tar.gz"
+    - |
+      if echo "$CI_COMMIT_REF_NAME" | grep -qE '^release/'; then
+        if curl -fsSL https://registry.kasmweb.com/1.1/list.json -o list.json.tmp; then
+          mv list.json.tmp list.json
+        else
+          echo "Failed to fetch list.json, using committed version"
+          rm -f list.json.tmp
+        fi
+      fi
     - tar -czf ${CI_COMMIT_SHA}.tar.gz *
     - aws s3 cp ${CI_COMMIT_SHA}.tar.gz s3://${S3_BUCKET}/wizard/
     - aws s3 cp ${CI_COMMIT_SHA}.tar.gz s3://${S3_BUCKET}/wizard/${SANITIZED_BRANCH}.tar.gz
