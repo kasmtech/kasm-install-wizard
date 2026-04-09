@@ -48,20 +48,43 @@ function matchVersion(currentVer, compatibilityList) {
   return null;
 }
 
-// Fetch workspace list from registry and convert to the images YAML structure.
-// Falls back to local list.json if the remote is unavailable.
-async function fetchWorkspaceList(currentVer, archName) {
-  let listData;
+// Build the image tag for a given compat entry.
+// Returns e.g. "1.18.1-rolling-weekly", falling back to "develop".
+function buildImageTag(compat) {
+  const compatTag = compat.image.split(':')[1] || '';
+  const versionPrefix = compatTag.replace(/-[^-]+-[^-]+$/, ''); // strip last two dash-segments
+  const candidate = versionPrefix + '-rolling-weekly';
+  return (compat.available_tags && compat.available_tags.includes(candidate)) ? candidate : 'develop';
+}
+
+// Fetch the registry workspace list, with local fallback.
+async function fetchListData() {
   try {
     const response = await fetch('https://registry.kasmweb.com/1.1/list.json');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    listData = await response.json();
+    return await response.json();
   } catch (err) {
     console.error('Failed to fetch workspace list, falling back to local list.json:', err.message);
-    let localList = await fsw.readFile('/wizard/list.json', 'utf8');
-    listData = JSON.parse(localList);
     sourceLocal = true;
+    return JSON.parse(await fsw.readFile('/wizard/list.json', 'utf8'));
   }
+}
+
+// Return the rolling-weekly tag string for the current version by finding
+// the first compatible workspace in the registry (e.g. "1.18.1-rolling-weekly").
+async function getRollingWeeklyTag(currentVer, archName) {
+  const listData = await fetchListData();
+  const ws = (listData.workspaces || []).find(
+    w => w.architecture && w.architecture.includes(archName) && matchVersion(currentVer, w.compatibility || [])
+  );
+  if (!ws) return currentVer + '-rolling-weekly';
+  return buildImageTag(matchVersion(currentVer, ws.compatibility));
+}
+
+// Fetch workspace list from registry and convert to the images YAML structure.
+// Falls back to local list.json if the remote is unavailable.
+async function fetchWorkspaceList(currentVer, archName) {
+  const listData = await fetchListData();
 
   const filtered = (listData.workspaces || []).filter(
     ws => ws.architecture && ws.architecture.includes(archName)
@@ -73,13 +96,8 @@ async function fetchWorkspaceList(currentVer, archName) {
     const compat = matchVersion(currentVer, ws.compatibility || []);
     if (!compat) continue;
 
-    // Build image tag: take the version prefix from the compat tag (e.g. "1.18.0" from
-    // "1.18.0-rolling-daily") and append "-rolling-weekly". Fall back to "develop".
     const imageBase = compat.image.split(':')[0];
-    const compatTag = compat.image.split(':')[1] || '';
-    const versionPrefix = compatTag.replace(/-[^-]+-[^-]+$/, ''); // strip last two dash-segments
-    const candidate = versionPrefix + '-rolling-weekly';
-    let imageTag = (compat.available_tags && compat.available_tags.includes(candidate)) ? candidate : 'develop';
+    const imageTag = buildImageTag(compat);
     const imageName = imageBase + ':' + imageTag;
 
     imagesList.push({
@@ -259,7 +277,7 @@ io.on('connection', async function (socket) {
 
   // Run bash upgrade with our custom flags
   async function upgrade(data) {
-    upgradeFlags = ['/kasm_release/upgrade.sh', '-L', port, '-K'];
+    upgradeFlags = ['/kasm_release/upgrade.sh', '-L', port];
 
     // Patch service image tags for rolling builds
     await appendRollingToServiceImages();
@@ -269,10 +287,11 @@ io.on('connection', async function (socket) {
     cmd.on('data', function(data) {
       socket.emit('term', data);
     });
-    cmd.on('exit', function(code, signal) {
+    cmd.on('exit', async function(code, signal) {
       if (code == 0) {
-        fsw.copyFile('/version.txt', '/opt/version.txt');
-        socket.emit('done', port);
+        await fsw.copyFile('/version.txt', '/opt/version.txt');
+        const rollingTag = await getRollingWeeklyTag(currentVersion, arch);
+        socket.emit('done', {port, rollingTag});
       }
     });
   }

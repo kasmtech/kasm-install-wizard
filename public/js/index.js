@@ -361,13 +361,15 @@ function selectAll() {
 }
 
 // Show finished page
-function done(port) {
+function done(data) {
+  var port = (typeof data === 'object') ? data.port : data;
+  var rollingTag = (typeof data === 'object') ? data.rollingTag : null;
   showContainer();
   titleChange('Complete');
   let titleBar = $('<div>');
   if (isUpgrade) {
     titleBar.append($('<h2>', {class: 'center'}).text('Upgrade Complete'));
-    titleBar.append($('<h3>', {class: 'center'}).text('Remember to update your workspace image tags to :' + currentVersion + '-rolling-weekly'));
+    titleBar.append($('<h3>', {class: 'center'}).text('Remember to update your workspace image tags to :' + (rollingTag || (currentVersion + '-rolling-weekly'))));
   } else {
     titleBar.append($('<h2>', {class: 'center'}).text('Installation Complete'));
   }
