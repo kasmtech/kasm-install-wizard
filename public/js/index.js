@@ -224,7 +224,7 @@ async function pickSettings() {
   ]);
   let userPass = $('<div>', {class: 'form-group'}).append([
     $('<label>', {for: 'userPass'}).text('user@kasm.local Password: '),
-    $('<input>', {name: 'userPass', id: 'userPass', type: 'password', placeholder: 'required'}).prop('required',true)
+    $('<input>', {name: 'userPass', id: 'userPass', type: 'password', required: true, placeholder: 'required'})
   ]);
   let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
   for await (let card of Object.keys(gpus)) {
@@ -237,7 +237,12 @@ async function pickSettings() {
   let submit = $('<div>', {class: 'form-group'}).append([
     $('<input>', {name: 'submit', type: 'submit', value: 'Next', class: 'btn btn-default btn-ghost'})
   ]);
+  let passHint = $('<p>', {
+    id: 'pass-hint',
+    style: 'color: inherit;'
+  }).text('Passwords must be at least 8 characters and include uppercase, lowercase, a number, and a special character (!#$%^&*@).');
   fieldset.append([
+    passHint,
     adminPass,
     userPass,
     forceGpu,
@@ -248,8 +253,16 @@ async function pickSettings() {
   // Grab data and move to image selection
   form.on('submit', function (e) {
     e.preventDefault();
-    installSettings.adminPass = $('#adminPass').val();
-    installSettings.userPass = $('#userPass').val();
+    const passRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!#$%^&*@]).{8,}$/;
+    const adminPassVal = $('#adminPass').val();
+    const userPassVal = $('#userPass').val();
+    if (!passRegex.test(adminPassVal) || !passRegex.test(userPassVal)) {
+      $('#pass-hint').css('color', 'red');
+      return;
+    }
+    $('#pass-hint').css('color', 'inherit');
+    installSettings.adminPass = adminPassVal;
+    installSettings.userPass = userPassVal;
     installSettings.forceGpu = $('#forceGpu').val();
     pickImages(false);
   });
