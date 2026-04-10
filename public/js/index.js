@@ -257,7 +257,7 @@ async function pickSettings() {
     const adminPassVal = $('#adminPass').val();
     const userPassVal = $('#userPass').val();
     if (!passRegex.test(adminPassVal) || !passRegex.test(userPassVal)) {
-      $('#pass-hint').css('color', 'red');
+      $('#pass-hint').css('color', '#df2f87');
       return;
     }
     $('#pass-hint').css('color', 'inherit');
@@ -334,14 +334,14 @@ function selectImage(image) {
   if (installImages.includes(imageKey)) {
     installImages = installImages.filter(e => e !== imageKey)
     $('#' + safeSelectorId).css({
-      filter: 'grayscale(100%)',
+      filter: 'grayscale(100%) brightness(0.7)',
       background: ''
     });
   } else {
     installImages.push(imageKey);
     $('#' + safeSelectorId).css({
       filter: '',
-      background: '#89cff0'
+      background: '#30426c'
     });
   }
 }
