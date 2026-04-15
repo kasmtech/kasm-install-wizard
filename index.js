@@ -142,7 +142,7 @@ async function installerBlobs() {
   try {
     currentVersion = fs.readFileSync('/version.txt', 'utf8').replace(/(\r\n|\n|\r)/gm,'');
   } catch (err) {
-    currentVersion = '1.18.1!';
+    currentVersion = '1.18.1';
   }
   images = await fetchWorkspaceList(currentVersion, arch);
   gpuInfo = {};
@@ -180,13 +180,21 @@ async function setGpu(imagesI) {
   if (upgradeSettings['forceGpu'] !== undefined) {
     installSettings = upgradeSettings;
   }
-  let gpu = installSettings.forceGpu.split('|')[0];
-  let gpuName = installSettings.forceGpu.split('|')[1];
-  let card = gpu.slice(-1);
-  let render = (Number(card) + 128).toString();
+  const forceGpu = installSettings.forceGpu;
+  if (!forceGpu || forceGpu === 'disabled' || !forceGpu.includes('|')) {
+    console.error('setGpu: invalid or missing forceGpu value:', forceGpu);
+    return imagesI;
+  }
+  const [gpu, gpuName] = forceGpu.split('|');
+  if (!gpu || !gpuName) {
+    console.error('setGpu: could not parse GPU path or name from forceGpu:', forceGpu);
+    return imagesI;
+  }
+  const card = gpu.slice(-1);
+  const render = (Number(card) + 128).toString();
   // Handle NVIDIA Gpus
   let baseRun;
-  if (gpuName.indexOf('NVIDIA') !== -1) {
+  if (gpuName.includes('NVIDIA')) {
     baseRun = JSON.parse('{"runtime":"nvidia","environment":{"NVIDIA_DRIVER_CAPABILITIES":"all","KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"device_requests":[{"driver": "","count": -1,"device_ids": null,"capabilities":[["gpu"]],"options":{}}]}');
   } else {
     baseRun = JSON.parse('{"environment":{"DRINODE":"/dev/dri/renderD' + render + '", "HW3D": true},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}');
