@@ -35,6 +35,10 @@ async function install() {
   } else {
     for await (let image of installImages) {
       let srcImage = images.images.find(x => x.friendly_name === image);
+      if (!srcImage) {
+        alert('Error: image "' + image + '" not found. Please refresh and try again.');
+        return;
+      }
       srcImage['enabled'] = true;
       selectedImages.images.push(srcImage);
       selectedImages.group_images.push({image_id: srcImage.image_id, group_id: "68d557ac-4cac-42cc-a9f3-1c7c853de0f3"});
@@ -313,8 +317,11 @@ async function pickImages(upgrade) {
       class: 'card',
       id: image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-'),
       title: image.description,
-      onclick: 'selectImage(\'' + image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-') + '\')'
-    }).append(imageName).css('filter', 'grayscale(100%)')
+      'data-friendly-name': image.friendly_name
+    }).append(imageName).css('filter', 'grayscale(100%)');
+    imageDiv.on('click', function() {
+      selectImage($(this).data('friendly-name'));
+    });
     let thumb = $('<img>', {class: 'thumb', src: image.image_src, loading: 'lazy'});
     imageDiv.append(thumb);
     $('#images').append(imageDiv);
@@ -328,17 +335,17 @@ async function pickImages(upgrade) {
 }
 
 // Select an individual image
-function selectImage(image) {
-  let imageKey = image.replace(new RegExp('_', 'g'), ' ').replace('-', '.');
-  let safeSelectorId = $.escapeSelector(image); // Escape the ID for jQuery
-  if (installImages.includes(imageKey)) {
-    installImages = installImages.filter(e => e !== imageKey)
+function selectImage(friendlyName) {
+  let elemId = friendlyName.replace(new RegExp(' ', 'g'), '_').replace('.', '-');
+  let safeSelectorId = $.escapeSelector(elemId); // Escape the ID for jQuery
+  if (installImages.includes(friendlyName)) {
+    installImages = installImages.filter(e => e !== friendlyName);
     $('#' + safeSelectorId).css({
       filter: 'grayscale(100%) brightness(0.7)',
       background: ''
     });
   } else {
-    installImages.push(imageKey);
+    installImages.push(friendlyName);
     $('#' + safeSelectorId).css({
       filter: '',
       background: '#30426c'
