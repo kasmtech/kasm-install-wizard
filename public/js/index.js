@@ -93,7 +93,7 @@ function renderInstall(data) {
   titleChange('EULA');
   EULA = data[0];
   images = data[1];
-  gpus = data[2];
+  gpus = data[2] || {};
   versionChange(data[3], data[4]);
   let EULADiv = $('<div>', {id: 'EULA'}).text(EULA);
   $('#container').append(EULADiv);
@@ -231,7 +231,7 @@ async function pickSettings() {
     $('<input>', {name: 'userPass', id: 'userPass', type: 'password', required: true, placeholder: 'required'})
   ]);
   let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
-  for await (let card of Object.keys(gpus)) {
+  for await (let card of Object.keys(gpus || {})) {
     gpuOptions.push($('<option>', {value: card + '|' + gpus[card]}).text(card + ' - ' + gpus[card]));
   }
   let forceGpu = $('<div>', {class: 'form-group'}).append([

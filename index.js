@@ -146,28 +146,32 @@ async function installerBlobs() {
     currentVersion = '1.18.1!';
   }
   images = await fetchWorkspaceList(currentVersion, arch);
-  let gpuData = [];
-  let gpuCmd = spawn('/gpuinfo.sh');
-  gpuCmd.stdout.on('data', function(data) {
-    gpuData.push(data);
-  });
-  gpuCmd.on('close', function(code) {
-    try {
-      if (code == 0) {
-        gpuInfo = JSON.parse(gpuData.join(''));
-      } else {
+  gpuInfo = {};
+  await new Promise((resolve) => {
+    let gpuData = [];
+    let gpuCmd = spawn('/gpuinfo.sh');
+    gpuCmd.stdout.on('data', function(data) {
+      gpuData.push(data);
+    });
+    gpuCmd.on('close', function(code) {
+      try {
+        if (code == 0) {
+          gpuInfo = JSON.parse(gpuData.join(''));
+        } else {
+          gpuInfo = {};
+        }
+      } catch (err) {
+        // Manually backfill GPU info if available
         gpuInfo = {};
-      }
-    } catch (err) {
-      // Manually backfill GPU info if available
-      gpuInfo = {};
-      for (let i = 0; i < 10; i++) {
-        let num = i.toString();
-        if (fs.existsSync('/dev/dri/card' + num)) {
-          gpuInfo['/dev/dri/card' + num] = "Unknown GPU";
+        for (let i = 0; i < 10; i++) {
+          let num = i.toString();
+          if (fs.existsSync('/dev/dri/card' + num)) {
+            gpuInfo['/dev/dri/card' + num] = "Unknown GPU";
+          }
         }
       }
-    }
+      resolve();
+    });
   });
 }
 installerBlobs();
