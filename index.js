@@ -1,33 +1,32 @@
 // Imports
-var Docker = require('dockerode');
-var socketIO = require('socket.io');
-var pty = require("node-pty");
-var fsw = require('fs').promises;
-var fs = require('fs');
-var os = require('os');
-var yaml = require('js-yaml');
-var _ = require('lodash');
-var si = require('systeminformation');
-var express = require('express');
-var app = require('express')();
-var privateKey  = fs.readFileSync('/opt/kasm/certs/kasm_wizard.key', 'utf8');
-var certificate = fs.readFileSync('/opt/kasm/certs/kasm_wizard.crt', 'utf8');
-var credentials = {key: privateKey, cert: certificate};
-var https = require('https').Server(credentials, app);
-var baserouter = express.Router();
-var docker = new Docker({socketPath: '/var/run/docker.sock'});
-var arch = os.arch().replace('x64', 'amd64');
-var baseUrl = process.env.SUBFOLDER || '/';
-var version = process.env.VERSION || 'stable';
-var port = process.env.KASM_PORT || '443';
+const Docker = require('dockerode');
+const socketIO = require('socket.io');
+const pty = require("node-pty");
+const fsw = require('fs').promises;
+const fs = require('fs');
+const os = require('os');
+const yaml = require('js-yaml');
+const _ = require('lodash');
+const si = require('systeminformation');
+const express = require('express');
+const app = require('express')();
+const privateKey  = fs.readFileSync('/opt/kasm/certs/kasm_wizard.key', 'utf8');
+const certificate = fs.readFileSync('/opt/kasm/certs/kasm_wizard.crt', 'utf8');
+const credentials = {key: privateKey, cert: certificate};
+const https = require('https').Server(credentials, app);
+const baserouter = express.Router();
+const docker = new Docker({socketPath: '/var/run/docker.sock'});
+const arch = os.arch().replace('x64', 'amd64');
+const baseUrl = process.env.SUBFOLDER || '/';
+const port = process.env.KASM_PORT || '443';
 const { spawn } = require('node:child_process');
-var EULA;
-var images;
-var currentVersion;
-var sourceLocal = false;
-var gpuInfo;
-var installSettings = {};
-var upgradeSettings = {};
+let EULA;
+let images;
+let currentVersion;
+let sourceLocal = false;
+let gpuInfo;
+let installSettings = {};
+let upgradeSettings = {};
 
 // Find the best matching compatibility entry for the current version.
 // Exact version match takes precedence over wildcard (e.g. "1.18.x").
@@ -186,17 +185,17 @@ async function setGpu(imagesI) {
   let card = gpu.slice(-1);
   let render = (Number(card) + 128).toString();
   // Handle NVIDIA Gpus
-  var baseRun;
+  let baseRun;
   if (gpuName.indexOf('NVIDIA') !== -1) {
     baseRun = JSON.parse('{"runtime":"nvidia","environment":{"NVIDIA_DRIVER_CAPABILITIES":"all","KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"device_requests":[{"driver": "","count": -1,"device_ids": null,"capabilities":[["gpu"]],"options":{}}]}');
   } else {
     baseRun = JSON.parse('{"environment":{"DRINODE":"/dev/dri/renderD' + render + '", "HW3D": true},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}');
   }
   let baseExec = JSON.parse('{"first_launch":{"user":"root","cmd": "bash -c \'chown -R kasm-user:kasm-user /dev/dri/*\'"}}');
-  for (var i=0; i<imagesI.images.length; i++) {
+  for (let i=0; i<imagesI.images.length; i++) {
     console.log(imagesI.images[i]['run_config']);
-    finalRun = _.merge(imagesI.images[i]['run_config'], baseRun)
-    finalExec = _.merge(imagesI.images[i]['exec_config'], baseExec)
+    let finalRun = _.merge(imagesI.images[i]['run_config'], baseRun)
+    let finalExec = _.merge(imagesI.images[i]['exec_config'], baseExec)
     imagesI.images[i]['run_config'] = finalRun;
     imagesI.images[i]['exec_config'] = finalExec;
   }
@@ -238,14 +237,14 @@ app.use(baseUrl, baserouter);
 https.listen(3000);
 
 //// socketIO comms ////
-io = socketIO(https, {path: baseUrl + 'socket.io'});
+const io = socketIO(https, {path: baseUrl + 'socket.io'});
 io.on('connection', async function (socket) {
   // Run bash install with our custom flags
   async function install(data) {
     // Determine install settings
     installSettings = data[0];
-    var imagesI = data[1];
-    installFlags = ['/kasm_release/install.sh', '-W', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
+    let imagesI = data[1];
+    let installFlags = ['/kasm_release/install.sh', '-W', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
     if (imagesI && typeof imagesI === 'object' && Array.isArray(imagesI.images) && imagesI.images.length < 10) {
       installFlags.push('-b');
     }
@@ -281,7 +280,7 @@ io.on('connection', async function (socket) {
 
   // Run bash upgrade with our custom flags
   async function upgrade(data) {
-    upgradeFlags = ['/kasm_release/upgrade.sh', '-L', port];
+    let upgradeFlags = ['/kasm_release/upgrade.sh', '-L', port];
 
     // Patch service image tags for rolling builds
     await appendRollingToServiceImages();

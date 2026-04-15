@@ -1,21 +1,21 @@
 // Variables
-var EULA;
-var images;
-var gpus;
-var term;
-var installImages = [];
-var installSettings = {};
-var upgradeSettings = {};
-var currentVersion = '';
-var isUpgrade = false;
-var selected = false;
+let EULA;
+let images;
+let gpus;
+let term;
+let installImages = [];
+const installSettings = {};
+const upgradeSettings = {};
+let currentVersion = '';
+let isUpgrade = false;
+let selected = false;
 
 // Socket.io connection
-var host = window.location.hostname; 
-var port = window.location.port;
-var protocol = window.location.protocol;
-var path = window.location.pathname;
-var socket = io(protocol + '//' + host + ':' + port, { path: path + 'socket.io'});
+const host = window.location.hostname;
+const port = window.location.port;
+const protocol = window.location.protocol;
+const path = window.location.pathname;
+const socket = io(protocol + '//' + host + ':' + port, { path: path + 'socket.io'});
 
 //// Page Functions ////
 
@@ -33,7 +33,7 @@ async function install() {
   if (installImages.length == 0) {
     socket.emit('install', [installSettings, false]);
   } else {
-    for await (let image of installImages) {
+    for (let image of installImages) {
       let srcImage = images.images.find(x => x.friendly_name === image);
       if (!srcImage) {
         alert('Error: image "' + image + '" not found. Please refresh and try again.');
@@ -71,7 +71,7 @@ function showTerminal() {
   $('#terminal').empty();
   $('#terminal').css('display', 'block');
   term = new Terminal();
-  fitaddon = new FitAddon.FitAddon();
+  let fitaddon = new FitAddon.FitAddon();
   term.loadAddon(fitaddon);
   term.open($('#terminal')[0]);
   fitaddon.fit();
@@ -112,14 +112,14 @@ async function renderDash(data) {
   // Store GPU info
   $('body').data('gpuInfo', info.gpuInfo);
   // Upgrade button if needed
-  var upgrade;
+  let upgrade;
   if (info.currentVersion !== info.localVersion) {
     upgrade = $('<button>', {class: 'btn btn-primary', onclick: 'renderUpgrade()'}).text('Upgrade to ' + info.currentVersion)
   } else {
     upgrade = info.currentVersion;
   }
   // Kasm docker containers
-  containersTable = $('<tbody>');
+  let containersTable = $('<tbody>');
   containersTable.append(
     $('<tr>').append([
       $('<th>').text('Web URL'),
@@ -134,7 +134,7 @@ async function renderDash(data) {
       $('<td>').append(upgrade)
     ])
   );
-  for await (let container of info.containers) {
+  for (let container of info.containers) {
     containersTable.append(
       $('<tr>').append([
         $('<th>').text(container.Names[0]),
@@ -142,7 +142,7 @@ async function renderDash(data) {
       ])
     );
   }
-  dockerCard = $('<div>', {id: 'dockerinfo', class: 'terminal-card'}).append([
+  let dockerCard = $('<div>', {id: 'dockerinfo', class: 'terminal-card'}).append([
     $('<header>').text('Kasm Docker containers'),
     $('<table>').append(containersTable)
   ]);
@@ -150,7 +150,7 @@ async function renderDash(data) {
   let usedmem = (info.mem.active/info.mem.total)*100;
   let totalmem = parseFloat(info.mem.total/1000000000).toFixed(2);
   let diskbuffer = parseFloat(info.mem.buffcache/1000000000).toFixed(2);
-  sysinfoTable = $('<tbody>').append([
+  let sysinfoTable = $('<tbody>').append([
     $('<tr>').append([
       $('<th>').text('CPU'),
       $('<td>').text(info.cpu.vendor + ' ' + info.cpu.brand)
@@ -190,7 +190,7 @@ async function renderDash(data) {
       )
     ])
   ]);
-  systemCard = $('<div>', {id: 'systeminfo', class: 'terminal-card'}).append([
+  let systemCard = $('<div>', {id: 'systeminfo', class: 'terminal-card'}).append([
     $('<header>').text('System Information'),
     $('<table>').append(sysinfoTable)
   ]);
@@ -231,7 +231,7 @@ async function pickSettings() {
     $('<input>', {name: 'userPass', id: 'userPass', type: 'password', required: true, placeholder: 'required'})
   ]);
   let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
-  for await (let card of Object.keys(gpus || {})) {
+  for (let card of Object.keys(gpus || {})) {
     gpuOptions.push($('<option>', {value: card + '|' + gpus[card]}).text(card + ' - ' + gpus[card]));
   }
   let forceGpu = $('<div>', {class: 'form-group'}).append([
@@ -298,8 +298,8 @@ function renderUpgrade() {
 
 // Render image selection
 async function pickImages(upgrade) {
-  var installText;
-  var installFunction;
+  let installText;
+  let installFunction;
   if (upgrade) {
     installText = 'Upgrade';
     installFunction = 'upgrade()';
@@ -311,7 +311,7 @@ async function pickImages(upgrade) {
   titleChange('Image Selection');
   let imagesDiv = $('<div>', {class: 'cardcontainer', id: 'images'});
   $('#container').append(imagesDiv);
-  for await (let image of images.images) {
+  for (let image of images.images) {
     let imageName = $('<p>').text(image.friendly_name);
     let imageDiv = $('<div>', {
       class: 'card',
@@ -382,8 +382,8 @@ function selectAll() {
 
 // Show finished page
 function done(data) {
-  var port = (typeof data === 'object') ? data.port : data;
-  var rollingTag = (typeof data === 'object') ? data.rollingTag : null;
+  const port = (typeof data === 'object') ? data.port : data;
+  const rollingTag = (typeof data === 'object') ? data.rollingTag : null;
   showContainer();
   titleChange('Complete');
   let titleBar = $('<div>');

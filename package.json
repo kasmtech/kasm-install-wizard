@@ -9,7 +9,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "dockerode": "^3.3.2",
+    "dockerode": "^4.0.10",
     "express": "^4.18.1",
     "js-yaml": "^4.1.0",
     "lodash": "^4.17.21",
