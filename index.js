@@ -242,12 +242,12 @@ io.on('connection', async function (socket) {
     installSettings = data[0];
     var imagesI = data[1];
     installFlags = ['/kasm_release/install.sh', '-W', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
-    if ((imagesI.hasOwnProperty('images')) && (imagesI.images.length < 10)) {
+    if (imagesI && typeof imagesI === 'object' && Array.isArray(imagesI.images) && imagesI.images.length < 10) {
       installFlags.push('-b');
     }
 
     // GPU yaml merge
-    if (installSettings.forceGpu !== 'disabled' && imagesI.images) {
+    if (installSettings.forceGpu !== 'disabled' && imagesI && imagesI.images) {
       imagesI = await setGpu(imagesI);
     }
 
