@@ -1,17 +1,21 @@
 // Variables
-var EULA;
-var images;
-var term;
-var installImages = [];
-var installSettings = {};
-var selected = false;
+let EULA;
+let images;
+let gpus;
+let term;
+let installImages = [];
+const installSettings = {};
+const upgradeSettings = {};
+let currentVersion = '';
+let isUpgrade = false;
+let selected = false;
 
 // Socket.io connection
-var host = window.location.hostname; 
-var port = window.location.port;
-var protocol = window.location.protocol;
-var path = window.location.pathname;
-var socket = io(protocol + '//' + host + ':' + port, { path: path + 'socket.io'});
+const host = window.location.hostname;
+const port = window.location.port;
+const protocol = window.location.protocol;
+const path = window.location.pathname;
+const socket = io(protocol + '//' + host + ':' + port, { path: path + 'socket.io'});
 
 //// Page Functions ////
 
@@ -25,18 +29,30 @@ async function install() {
   showTerminal()
   titleChange('Installing');
   // Create new object based on image selection
-  let selectedImages = {images: {}};
+  let selectedImages = {alembic_version: images.alembic_version, images: [], group_images: []};
   if (installImages.length == 0) {
     socket.emit('install', [installSettings, false]);
   } else {
-    for await (let image of installImages) {
-      if (images.images[image].hasOwnProperty('enabled')) {
-        images.images[image].enabled = true;
+    for (let image of installImages) {
+      let srcImage = images.images.find(x => x.friendly_name === image);
+      if (!srcImage) {
+        alert('Error: image "' + image + '" not found. Please refresh and try again.');
+        return;
       }
-      Object.assign(selectedImages.images, {[image]: images.images[image]});
+      srcImage['enabled'] = true;
+      selectedImages.images.push(srcImage);
+      selectedImages.group_images.push({image_id: srcImage.image_id, group_id: "68d557ac-4cac-42cc-a9f3-1c7c853de0f3"});
     }
     socket.emit('install', [installSettings, selectedImages]);
   }
+}
+
+// Execute upgrade
+async function upgrade() {
+  isUpgrade = true;
+  showTerminal();
+  titleChange('Upgrading');
+  socket.emit('upgrade', [upgradeSettings, false]);
 }
 
 // Show page container
@@ -55,7 +71,7 @@ function showTerminal() {
   $('#terminal').empty();
   $('#terminal').css('display', 'block');
   term = new Terminal();
-  fitaddon = new FitAddon.FitAddon();
+  let fitaddon = new FitAddon.FitAddon();
   term.loadAddon(fitaddon);
   term.open($('#terminal')[0]);
   fitaddon.fit();
@@ -67,12 +83,18 @@ function titleChange(value) {
   $('#title').text(value);
 }
 
+function versionChange(ver, local) {
+  document.title = 'Kasm Wizard ' + ver + (local ? ' (local)' : '');
+}
+
 // Render landing as installer page
 function renderInstall(data) {
   showContainer();
   titleChange('EULA');
   EULA = data[0];
   images = data[1];
+  gpus = data[2] || {};
+  versionChange(data[3], data[4]);
   let EULADiv = $('<div>', {id: 'EULA'}).text(EULA);
   $('#container').append(EULADiv);
   let EULAButton = $('<button>', {id: 'EULAButton', onclick: 'pickSettings()', class: 'btn btn-default btn-ghost'}).text('Accept and continue');
@@ -80,18 +102,39 @@ function renderInstall(data) {
 }
 
 // Render Dashboard
-async function renderDash(info) {
+async function renderDash(data) {
   showContainer();
   titleChange('Dashboard');
+  let info = data[0];
+  images = data[1];
+  currentVersion = info.currentVersion;
+  versionChange(info.currentVersion, info.sourceLocal);
+  // Store GPU info
+  $('body').data('gpuInfo', info.gpuInfo);
+  // Upgrade button if needed
+  let upgrade;
+  if (info.currentVersion !== info.localVersion) {
+    upgrade = $('<button>', {class: 'btn btn-primary', onclick: 'renderUpgrade()'}).text('Upgrade to ' + info.currentVersion)
+  } else {
+    upgrade = info.currentVersion;
+  }
   // Kasm docker containers
-  containersTable = $('<tbody>');
+  let containersTable = $('<tbody>');
   containersTable.append(
     $('<tr>').append([
       $('<th>').text('Web URL'),
       $('<td>').append($('<a>', {href: 'https://' + host + ':' + info.port, target: '_blank'}).text('https://' + host + ':' + info.port))
+    ]),
+    $('<tr>').append([
+      $('<th>').text('Installed Version'),
+      $('<td>').text(info.localVersion)
+    ]),
+    $('<tr>').append([
+      $('<th>').text('Current Version'),
+      $('<td>').append(upgrade)
     ])
   );
-  for await (let container of info.containers) {
+  for (let container of info.containers) {
     containersTable.append(
       $('<tr>').append([
         $('<th>').text(container.Names[0]),
@@ -99,7 +142,7 @@ async function renderDash(info) {
       ])
     );
   }
-  dockerCard = $('<div>', {id: 'dockerinfo', class: 'terminal-card'}).append([
+  let dockerCard = $('<div>', {id: 'dockerinfo', class: 'terminal-card'}).append([
     $('<header>').text('Kasm Docker containers'),
     $('<table>').append(containersTable)
   ]);
@@ -107,7 +150,7 @@ async function renderDash(info) {
   let usedmem = (info.mem.active/info.mem.total)*100;
   let totalmem = parseFloat(info.mem.total/1000000000).toFixed(2);
   let diskbuffer = parseFloat(info.mem.buffcache/1000000000).toFixed(2);
-  sysinfoTable = $('<tbody>').append([
+  let sysinfoTable = $('<tbody>').append([
     $('<tr>').append([
       $('<th>').text('CPU'),
       $('<td>').text(info.cpu.vendor + ' ' + info.cpu.brand)
@@ -147,7 +190,7 @@ async function renderDash(info) {
       )
     ])
   ]);
-  systemCard = $('<div>', {id: 'systeminfo', class: 'terminal-card'}).append([
+  let systemCard = $('<div>', {id: 'systeminfo', class: 'terminal-card'}).append([
     $('<header>').text('System Information'),
     $('<table>').append(sysinfoTable)
   ]);
@@ -185,24 +228,28 @@ async function pickSettings() {
   ]);
   let userPass = $('<div>', {class: 'form-group'}).append([
     $('<label>', {for: 'userPass'}).text('user@kasm.local Password: '),
-    $('<input>', {name: 'userPass', id: 'userPass', type: 'password', placeholder: 'required'}).prop('required',true)
+    $('<input>', {name: 'userPass', id: 'userPass', type: 'password', required: true, placeholder: 'required'})
   ]);
-  let useRolling = $('<div>', {class: 'form-group'}).append([
-    $('<label>', {for: 'useRolling'}).text('Use Rolling Images: '),
-    $('<input>', {name: 'useRolling', id: 'useRolling', type: 'checkbox'})
-  ]);
-  let noDownload = $('<div>', {class: 'form-group'}).append([
-    $('<label>', {for: 'noDownload'}).text('Skip Image Download: '),
-    $('<input>', {name: 'noDownload', id: 'noDownload', type: 'checkbox'})
+  let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
+  for (let card of Object.keys(gpus || {})) {
+    gpuOptions.push($('<option>', {value: card + '|' + gpus[card]}).text(card + ' - ' + gpus[card]));
+  }
+  let forceGpu = $('<div>', {class: 'form-group'}).append([
+    $('<label>', {for: 'forceGpu'}).text('Use GPU on all images: '),
+    $('<select>', {name: 'forceGpu', id: 'forceGpu',}).append(gpuOptions)
   ]);
   let submit = $('<div>', {class: 'form-group'}).append([
     $('<input>', {name: 'submit', type: 'submit', value: 'Next', class: 'btn btn-default btn-ghost'})
   ]);
+  let passHint = $('<p>', {
+    id: 'pass-hint',
+    style: 'color: inherit;'
+  }).text('Passwords must be at least 8 characters and include uppercase, lowercase, a number, and a special character (!#$%^&*@).');
   fieldset.append([
+    passHint,
     adminPass,
     userPass,
-    useRolling,
-    noDownload,
+    forceGpu,
     submit
   ]);
   form.append(fieldset);
@@ -210,36 +257,77 @@ async function pickSettings() {
   // Grab data and move to image selection
   form.on('submit', function (e) {
     e.preventDefault();
-    installSettings.adminPass = $('#adminPass').val();
-    installSettings.userPass = $('#userPass').val();
-    installSettings.useRolling = $('#useRolling').is(":checked");
-    installSettings.noDownload = $('#noDownload').is(":checked");
-    pickImages();
+    const passRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!#$%^&*@]).{8,}$/;
+    const adminPassVal = $('#adminPass').val();
+    const userPassVal = $('#userPass').val();
+    if (!passRegex.test(adminPassVal) || !passRegex.test(userPassVal)) {
+      $('#pass-hint').css('color', '#df2f87');
+      return;
+    }
+    $('#pass-hint').css('color', 'inherit');
+    installSettings.adminPass = adminPassVal;
+    installSettings.userPass = userPassVal;
+    installSettings.forceGpu = $('#forceGpu').val();
+    pickImages(false);
+  });
+}
+
+// Render upgrade form
+function renderUpgrade() {
+  showContainer();
+  titleChange('Upgrade Settings');
+  let fieldset = $('<fieldset>').append($('<legend>').text('Kasm Upgrade Settings'));
+  fieldset.append($('<p>').text('Are you sure you want to upgrade Kasm to version ' + currentVersion + '?'));
+  let confirmCheck = $('<div>', {class: 'form-group'}).append([
+    $('<label>', {for: 'confirmUpgrade'}).text('I confirm I want to upgrade'),
+    $('<input>', {name: 'confirmUpgrade', id: 'confirmUpgrade', type: 'checkbox'})
+  ]);
+  fieldset.append(confirmCheck);
+  let upgradeButton = $('<button>', {
+    class: 'btn btn-default btn-ghost',
+    id: 'upgradeButton',
+    onclick: 'upgrade()',
+    disabled: true
+  }).text('Upgrade');
+  $('#container').append([$('<div>', {class: 'terminal-card', style: 'margin: 20px 0; border: none;'}).append(fieldset), upgradeButton]);
+  $('#confirmUpgrade').on('change', function() {
+    $('#upgradeButton').prop('disabled', !this.checked);
   });
 }
 
 
-
 // Render image selection
-async function pickImages() {
+async function pickImages(upgrade) {
+  let installText;
+  let installFunction;
+  if (upgrade) {
+    installText = 'Upgrade';
+    installFunction = 'upgrade()';
+  } else {
+    installText = 'Install';
+    installFunction = 'install()';
+  }
   showContainer();
   titleChange('Image Selection');
   let imagesDiv = $('<div>', {class: 'cardcontainer', id: 'images'});
   $('#container').append(imagesDiv);
-  for await (let image of Object.keys(images.images).sort(Intl.Collator().compare)) {
-    let imageName = $('<p>').text(image);
+  for (let image of images.images) {
+    let imageName = $('<p>').text(image.friendly_name);
     let imageDiv = $('<div>', {
       class: 'card',
-      id: image.replace(new RegExp(' ', 'g'), '_'),
-      title: images.images[image].description,
-      onclick: 'selectImage(\'' + image.replace(new RegExp(' ', 'g'), '_') + '\')'
-    }).append(imageName).css('filter', 'grayscale(100%)')
-    let thumb = $('<img>', {class: 'thumb', src: 'public/' + images.images[image].image_src});
+      id: image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-'),
+      title: image.description,
+      'data-friendly-name': image.friendly_name
+    }).append(imageName).css('filter', 'grayscale(100%)');
+    imageDiv.on('click', function() {
+      selectImage($(this).data('friendly-name'));
+    });
+    let thumb = $('<img>', {class: 'thumb', src: image.image_src, loading: 'lazy'});
     imageDiv.append(thumb);
     $('#images').append(imageDiv);
   }
   let allButton = $('<button>', {class: 'btn btn-default btn-ghost center', onclick: 'selectAll()'}).text('Select All');
-  let installButton = $('<button>', {class: 'btn btn-default btn-ghost center', onclick: 'install()'}).text('Install');
+  let installButton = $('<button>', {class: 'btn btn-default btn-ghost center', onclick: installFunction}).text(installText);
   $('#container').append([
     allButton,
     installButton
@@ -247,19 +335,20 @@ async function pickImages() {
 }
 
 // Select an individual image
-function selectImage(image) {
-  let imageKey = image.replace(new RegExp('_', 'g'), ' ');
-  if (installImages.includes(imageKey)) {
-    installImages = installImages.filter(e => e !== imageKey)
-    $('#' + image).css({
-      filter: 'grayscale(100%)',
+function selectImage(friendlyName) {
+  let elemId = friendlyName.replace(new RegExp(' ', 'g'), '_').replace('.', '-');
+  let safeSelectorId = $.escapeSelector(elemId); // Escape the ID for jQuery
+  if (installImages.includes(friendlyName)) {
+    installImages = installImages.filter(e => e !== friendlyName);
+    $('#' + safeSelectorId).css({
+      filter: 'grayscale(100%) brightness(0.7)',
       background: ''
     });
   } else {
-    installImages.push(imageKey);
-    $('#' + image).css({
+    installImages.push(friendlyName);
+    $('#' + safeSelectorId).css({
       filter: '',
-      background: '#89cff0'
+      background: '#30426c'
     });
   }
 }
@@ -269,19 +358,21 @@ function selectAll() {
   installImages = [];
   if (selected) {
     selected = false;
-    for (let image of Object.keys(images.images)) {
-      let imageElem = image.replace(new RegExp(' ', 'g'), '_');
-      $('#' + imageElem).css({
+    for (let image of images.images) {
+      let imageElem = image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-');
+      let safeSelectorId = $.escapeSelector(imageElem); // Escape the ID for jQuery
+      $('#' + safeSelectorId).css({
         filter: 'grayscale(100%)',
         background: ''
       });
     }
   } else {
     selected = true;
-    for (let image of Object.keys(images.images)) {
-      let imageElem = image.replace(new RegExp(' ', 'g'), '_');
-      installImages.push(image);
-      $('#' + imageElem).css({
+    for (let image of images.images) {
+      let imageElem = image.friendly_name.replace(new RegExp(' ', 'g'), '_').replace('.', '-');
+      let safeSelectorId = $.escapeSelector(imageElem); // Escape the ID for jQuery
+      installImages.push(image.friendly_name);
+      $('#' + safeSelectorId).css({
         filter: '',
         background: '#89cff0'
       });
@@ -290,17 +381,24 @@ function selectAll() {
 }
 
 // Show finished page
-function done(port) {
+function done(data) {
+  const port = (typeof data === 'object') ? data.port : data;
+  const rollingTag = (typeof data === 'object') ? data.rollingTag : null;
   showContainer();
   titleChange('Complete');
   let titleBar = $('<div>');
-  titleBar.append($('<h2>', {class: 'center'}).text('Installation Complete'));
+  if (isUpgrade) {
+    titleBar.append($('<h2>', {class: 'center'}).text('Upgrade Complete'));
+    titleBar.append($('<h3>', {class: 'center'}).text('Remember to update your workspace image tags to :' + (rollingTag || (currentVersion + '-rolling-weekly'))));
+  } else {
+    titleBar.append($('<h2>', {class: 'center'}).text('Installation Complete'));
+  }
   titleBar.append($('<h3>', {class: 'center'}).text('This page will reload in 5 seconds'));
   titleBar.append($('<h3>', {class: 'center'}).text('Your installation is available on port ' + port));
   $('#container').append(titleBar);
   setTimeout(function(){
     location.reload(true);
-  }, 5000); 
+  }, 5000);
 }
 
 //// Socket events ////
