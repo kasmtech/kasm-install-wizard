@@ -24,7 +24,7 @@ update_list_json:
         mv list.json.tmp list.json
         git config user.email "ci@gitlab"
         git config user.name "GitLab CI"
-        git remote set-url origin "https://gitlab-ci-token:${CI_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+        git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
         git add list.json
         if ! git diff --cached --quiet; then
           git commit -m "chore: update list.json from registry [skip ci]"
