@@ -19,12 +19,11 @@ const docker = new Docker({socketPath: '/var/run/docker.sock'});
 const arch = os.arch().replace('x64', 'amd64');
 const baseUrl = process.env.SUBFOLDER || '/';
 const port = process.env.KASM_PORT || '443';
-const { spawn } = require('node:child_process');
 let EULA;
 let images;
 let currentVersion;
 let sourceLocal = false;
-let gpuInfo;
+let gpuInfo = {};
 let installSettings = {};
 let upgradeSettings = {};
 
@@ -145,71 +144,8 @@ async function installerBlobs() {
     currentVersion = '1.19.0';
   }
   images = await fetchWorkspaceList(currentVersion, arch);
-  gpuInfo = {};
-  await new Promise((resolve) => {
-    let gpuData = [];
-    let gpuCmd = spawn('/gpuinfo.sh');
-    gpuCmd.stdout.on('data', function(data) {
-      gpuData.push(data);
-    });
-    gpuCmd.on('close', function(code) {
-      try {
-        if (code == 0) {
-          gpuInfo = JSON.parse(gpuData.join(''));
-        } else {
-          gpuInfo = {};
-        }
-      } catch (err) {
-        // Manually backfill GPU info if available
-        gpuInfo = {};
-        for (let i = 0; i < 10; i++) {
-          let num = i.toString();
-          if (fs.existsSync('/dev/dri/card' + num)) {
-            gpuInfo['/dev/dri/card' + num] = "Unknown GPU";
-          }
-        }
-      }
-      resolve();
-    });
-  });
 }
 installerBlobs();
-
-// GPU image yaml merging
-async function setGpu(imagesI) {
-  if (upgradeSettings['forceGpu'] !== undefined) {
-    installSettings = upgradeSettings;
-  }
-  const forceGpu = installSettings.forceGpu;
-  if (!forceGpu || forceGpu === 'disabled' || !forceGpu.includes('|')) {
-    console.error('setGpu: invalid or missing forceGpu value:', forceGpu);
-    return imagesI;
-  }
-  const [gpu, gpuName] = forceGpu.split('|');
-  if (!gpu || !gpuName) {
-    console.error('setGpu: could not parse GPU path or name from forceGpu:', forceGpu);
-    return imagesI;
-  }
-  const card = gpu.slice(-1);
-  const render = (Number(card) + 128).toString();
-  // Handle NVIDIA Gpus
-  let baseRun;
-  if (gpuName.includes('NVIDIA')) {
-    baseRun = JSON.parse('{"runtime":"nvidia","environment":{"NVIDIA_DRIVER_CAPABILITIES":"all","KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"device_requests":[{"driver": "","count": -1,"device_ids": null,"capabilities":[["gpu"]],"options":{}}]}');
-  } else {
-    baseRun = JSON.parse('{"environment":{"DRINODE":"/dev/dri/renderD' + render + '", "HW3D": true},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}');
-  }
-  let baseExec = JSON.parse('{"first_launch":{"user":"root","cmd": "bash -c \'chown -R kasm-user:kasm-user /dev/dri/*\'"}}');
-  for (let i=0; i<imagesI.images.length; i++) {
-    console.log(imagesI.images[i]['run_config']);
-    let finalRun = _.merge(imagesI.images[i]['run_config'], baseRun)
-    let finalExec = _.merge(imagesI.images[i]['exec_config'], baseExec)
-    imagesI.images[i]['run_config'] = finalRun;
-    imagesI.images[i]['exec_config'] = finalExec;
-  }
-  return imagesI;
-}
-
 
 //// Http server ////
 baserouter.use('/public', express.static(__dirname + '/public'));
@@ -233,11 +169,6 @@ io.on('connection', async function (socket) {
     let installFlags = ['/kasm_release/install.sh', '-W', '-B' ,'-H', '-e', '-L', port, '-P', installSettings.adminPass, '-U', installSettings.userPass];
     if (imagesI && typeof imagesI === 'object' && Array.isArray(imagesI.images) && imagesI.images.length < 10) {
       installFlags.push('-b');
-    }
-
-    // GPU yaml merge
-    if (installSettings.forceGpu !== 'disabled' && imagesI && imagesI.images) {
-      imagesI = await setGpu(imagesI);
     }
 
     // Write finalized image data
