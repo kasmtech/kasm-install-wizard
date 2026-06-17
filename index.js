@@ -48,7 +48,7 @@ function matchVersion(currentVer, compatibilityList) {
 }
 
 // Build the image tag for a given compat entry.
-// Returns e.g. "1.18.1-rolling-weekly", falling back to "develop".
+// Returns e.g. "1.19.0-rolling-weekly", falling back to "develop".
 function buildImageTag(compat) {
   const compatTag = compat.image.split(':')[1] || '';
   const versionPrefix = compatTag.replace(/-[^-]+-[^-]+$/, ''); // strip last two dash-segments
@@ -70,7 +70,7 @@ async function fetchListData() {
 }
 
 // Return the rolling-weekly tag string for the current version by finding
-// the first compatible workspace in the registry (e.g. "1.18.1-rolling-weekly").
+// the first compatible workspace in the registry (e.g. "1.19.0-rolling-weekly").
 async function getRollingWeeklyTag(currentVer, archName) {
   const listData = await fetchListData();
   const ws = (listData.workspaces || []).find(
@@ -142,7 +142,7 @@ async function installerBlobs() {
   try {
     currentVersion = fs.readFileSync('/version.txt', 'utf8').replace(/(\r\n|\n|\r)/gm,'');
   } catch (err) {
-    currentVersion = '1.18.1';
+    currentVersion = '1.19.0';
   }
   images = await fetchWorkspaceList(currentVersion, arch);
   gpuInfo = {};
@@ -210,28 +210,6 @@ async function setGpu(imagesI) {
   return imagesI;
 }
 
-// For rolling-weekly installs, append -rolling to service image tags in docker conf yamls.
-// Prevents -rolling-rolling by only modifying tags that don't already end with -rolling.
-async function appendRollingToServiceImages() {
-  const confDir = '/kasm_release/docker';
-  let entries;
-  try {
-    entries = await fsw.readdir(confDir);
-  } catch (err) {
-    return;
-  }
-  for (const file of entries.filter(f => f.endsWith('.yaml'))) {
-    const filePath = confDir + '/' + file;
-    const content = await fsw.readFile(filePath, 'utf8');
-    const updated = content.split('\n').map(line => {
-      if (/ image:/.test(line) && /"$/.test(line) && !/-rolling"$/.test(line) && !/develop"$/.test(line)) {
-        return line.replace(/"$/, '-rolling"');
-      }
-      return line;
-    }).join('\n');
-    await fsw.writeFile(filePath, updated);
-  }
-}
 
 //// Http server ////
 baserouter.use('/public', express.static(__dirname + '/public'));
@@ -268,7 +246,6 @@ io.on('connection', async function (socket) {
       installFlags = installFlags.filter(function(e) { return e !== '-W' });
     } else {
       await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
-      await appendRollingToServiceImages();
     }
 
     // Copy over version
@@ -289,9 +266,6 @@ io.on('connection', async function (socket) {
   // Run bash upgrade with our custom flags
   async function upgrade(data) {
     let upgradeFlags = ['/kasm_release/upgrade.sh', '-L', port];
-
-    // Patch service image tags for rolling builds
-    await appendRollingToServiceImages();
 
     // Run upgrade
     let cmd = pty.spawn('/bin/bash', upgradeFlags);
