@@ -19,12 +19,11 @@ const docker = new Docker({socketPath: '/var/run/docker.sock'});
 const arch = os.arch().replace('x64', 'amd64');
 const baseUrl = process.env.SUBFOLDER || '/';
 const port = process.env.KASM_PORT || '443';
-const { spawn } = require('node:child_process');
 let EULA;
 let images;
 let currentVersion;
 let sourceLocal = false;
-let gpuInfo;
+let gpuInfo = {};
 let installSettings = {};
 let upgradeSettings = {};
 
@@ -48,7 +47,7 @@ function matchVersion(currentVer, compatibilityList) {
 }
 
 // Build the image tag for a given compat entry.
-// Returns e.g. "1.18.1-rolling-weekly", falling back to "develop".
+// Returns e.g. "1.19.0-rolling-weekly", falling back to "develop".
 function buildImageTag(compat) {
   const compatTag = compat.image.split(':')[1] || '';
   const versionPrefix = compatTag.replace(/-[^-]+-[^-]+$/, ''); // strip last two dash-segments
@@ -70,7 +69,7 @@ async function fetchListData() {
 }
 
 // Return the rolling-weekly tag string for the current version by finding
-// the first compatible workspace in the registry (e.g. "1.18.1-rolling-weekly").
+// the first compatible workspace in the registry (e.g. "1.19.0-rolling-weekly").
 async function getRollingWeeklyTag(currentVer, archName) {
   const listData = await fetchListData();
   const ws = (listData.workspaces || []).find(
@@ -109,12 +108,14 @@ async function fetchWorkspaceList(currentVer, archName) {
       exec_config: {},
       friendly_name: ws.friendly_name,
       gpu_count: 0,
+      gpu_graphics_acceleration: ['MESA'],
+      gpu_video_encoding: ['SW'],
       hidden: false,
       image_id: '${uuid:image_id:' + imageIdx + '}',
       image_src: 'https://registry.kasmweb.com/1.1/icons/' + ws.image_src,
       image_type: 'Container',
       launch_config: {},
-      memory: 2768000000,
+      memory_bytes: 2768000000,
       name: imageName,
       notes: ws.notes || null,
       run_config: {},
@@ -142,96 +143,11 @@ async function installerBlobs() {
   try {
     currentVersion = fs.readFileSync('/version.txt', 'utf8').replace(/(\r\n|\n|\r)/gm,'');
   } catch (err) {
-    currentVersion = '1.18.1';
+    currentVersion = '1.19.0';
   }
   images = await fetchWorkspaceList(currentVersion, arch);
-  gpuInfo = {};
-  await new Promise((resolve) => {
-    let gpuData = [];
-    let gpuCmd = spawn('/gpuinfo.sh');
-    gpuCmd.stdout.on('data', function(data) {
-      gpuData.push(data);
-    });
-    gpuCmd.on('close', function(code) {
-      try {
-        if (code == 0) {
-          gpuInfo = JSON.parse(gpuData.join(''));
-        } else {
-          gpuInfo = {};
-        }
-      } catch (err) {
-        // Manually backfill GPU info if available
-        gpuInfo = {};
-        for (let i = 0; i < 10; i++) {
-          let num = i.toString();
-          if (fs.existsSync('/dev/dri/card' + num)) {
-            gpuInfo['/dev/dri/card' + num] = "Unknown GPU";
-          }
-        }
-      }
-      resolve();
-    });
-  });
 }
 installerBlobs();
-
-// GPU image yaml merging
-async function setGpu(imagesI) {
-  if (upgradeSettings['forceGpu'] !== undefined) {
-    installSettings = upgradeSettings;
-  }
-  const forceGpu = installSettings.forceGpu;
-  if (!forceGpu || forceGpu === 'disabled' || !forceGpu.includes('|')) {
-    console.error('setGpu: invalid or missing forceGpu value:', forceGpu);
-    return imagesI;
-  }
-  const [gpu, gpuName] = forceGpu.split('|');
-  if (!gpu || !gpuName) {
-    console.error('setGpu: could not parse GPU path or name from forceGpu:', forceGpu);
-    return imagesI;
-  }
-  const card = gpu.slice(-1);
-  const render = (Number(card) + 128).toString();
-  // Handle NVIDIA Gpus
-  let baseRun;
-  if (gpuName.includes('NVIDIA')) {
-    baseRun = JSON.parse('{"runtime":"nvidia","environment":{"NVIDIA_DRIVER_CAPABILITIES":"all","KASM_EGL_CARD":"/dev/dri/card' + card + '","KASM_RENDERD":"/dev/dri/renderD' + render + '"},"device_requests":[{"driver": "","count": -1,"device_ids": null,"capabilities":[["gpu"]],"options":{}}]}');
-  } else {
-    baseRun = JSON.parse('{"environment":{"DRINODE":"/dev/dri/renderD' + render + '", "HW3D": true},"devices":["/dev/dri/card' + card + ':/dev/dri/card' + card + ':rwm","/dev/dri/renderD' + render + ':/dev/dri/renderD' + render + ':rwm"]}');
-  }
-  let baseExec = JSON.parse('{"first_launch":{"user":"root","cmd": "bash -c \'chown -R kasm-user:kasm-user /dev/dri/*\'"}}');
-  for (let i=0; i<imagesI.images.length; i++) {
-    console.log(imagesI.images[i]['run_config']);
-    let finalRun = _.merge(imagesI.images[i]['run_config'], baseRun)
-    let finalExec = _.merge(imagesI.images[i]['exec_config'], baseExec)
-    imagesI.images[i]['run_config'] = finalRun;
-    imagesI.images[i]['exec_config'] = finalExec;
-  }
-  return imagesI;
-}
-
-// For rolling-weekly installs, append -rolling to service image tags in docker conf yamls.
-// Prevents -rolling-rolling by only modifying tags that don't already end with -rolling.
-async function appendRollingToServiceImages() {
-  const confDir = '/kasm_release/docker';
-  let entries;
-  try {
-    entries = await fsw.readdir(confDir);
-  } catch (err) {
-    return;
-  }
-  for (const file of entries.filter(f => f.endsWith('.yaml'))) {
-    const filePath = confDir + '/' + file;
-    const content = await fsw.readFile(filePath, 'utf8');
-    const updated = content.split('\n').map(line => {
-      if (/ image:/.test(line) && /"$/.test(line) && !/-rolling"$/.test(line) && !/develop"$/.test(line)) {
-        return line.replace(/"$/, '-rolling"');
-      }
-      return line;
-    }).join('\n');
-    await fsw.writeFile(filePath, updated);
-  }
-}
 
 //// Http server ////
 baserouter.use('/public', express.static(__dirname + '/public'));
@@ -257,18 +173,12 @@ io.on('connection', async function (socket) {
       installFlags.push('-b');
     }
 
-    // GPU yaml merge
-    if (installSettings.forceGpu !== 'disabled' && imagesI && imagesI.images) {
-      imagesI = await setGpu(imagesI);
-    }
-
     // Write finalized image data
     let yamlStr = yaml.dump(imagesI);
     if (yamlStr.startsWith("false")) {
       installFlags = installFlags.filter(function(e) { return e !== '-W' });
     } else {
       await fsw.writeFile('/kasm_release/conf/database/seed_data/default_images_' + arch + '.yaml', yamlStr);
-      await appendRollingToServiceImages();
     }
 
     // Copy over version
@@ -289,9 +199,6 @@ io.on('connection', async function (socket) {
   // Run bash upgrade with our custom flags
   async function upgrade(data) {
     let upgradeFlags = ['/kasm_release/upgrade.sh', '-L', port];
-
-    // Patch service image tags for rolling builds
-    await appendRollingToServiceImages();
 
     // Run upgrade
     let cmd = pty.spawn('/bin/bash', upgradeFlags);

@@ -1,7 +1,6 @@
 // Variables
 let EULA;
 let images;
-let gpus;
 let term;
 let installImages = [];
 const installSettings = {};
@@ -93,7 +92,6 @@ function renderInstall(data) {
   titleChange('EULA');
   EULA = data[0];
   images = data[1];
-  gpus = data[2] || {};
   versionChange(data[3], data[4]);
   let EULADiv = $('<div>', {id: 'EULA'}).text(EULA);
   $('#container').append(EULADiv);
@@ -230,14 +228,7 @@ async function pickSettings() {
     $('<label>', {for: 'userPass'}).text('user@kasm.local Password: '),
     $('<input>', {name: 'userPass', id: 'userPass', type: 'password', required: true, placeholder: 'required'})
   ]);
-  let gpuOptions = [$('<option>', {value: 'disabled'}).text('Disabled')];
-  for (let card of Object.keys(gpus || {})) {
-    gpuOptions.push($('<option>', {value: card + '|' + gpus[card]}).text(card + ' - ' + gpus[card]));
-  }
-  let forceGpu = $('<div>', {class: 'form-group'}).append([
-    $('<label>', {for: 'forceGpu'}).text('Use GPU on all images: '),
-    $('<select>', {name: 'forceGpu', id: 'forceGpu',}).append(gpuOptions)
-  ]);
+  let gpuNotice = $('<p>').text('GPU acceleration is automatically managed by Kasm Workspaces 1.19.0. Configure GPU settings after installation in the admin panel under Infrastructure > Agents.');
   let submit = $('<div>', {class: 'form-group'}).append([
     $('<input>', {name: 'submit', type: 'submit', value: 'Next', class: 'btn btn-default btn-ghost'})
   ]);
@@ -249,7 +240,7 @@ async function pickSettings() {
     passHint,
     adminPass,
     userPass,
-    forceGpu,
+    gpuNotice,
     submit
   ]);
   form.append(fieldset);
@@ -267,7 +258,6 @@ async function pickSettings() {
     $('#pass-hint').css('color', 'inherit');
     installSettings.adminPass = adminPassVal;
     installSettings.userPass = userPassVal;
-    installSettings.forceGpu = $('#forceGpu').val();
     pickImages(false);
   });
 }
