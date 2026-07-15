@@ -36,3 +36,8 @@ As configured files ingested from a current Kasm Workspaces installer are needed
 /kasm_release/
 └── Full Kasm workspaces installer
 ```
+
+
+## Reporting Issues
+
+To report any issues for this repository, please use our central issue tracker: **[Kasm Workspaces Issue Tracker](https://github.com/kasmtech/workspaces-issues/issues)**
