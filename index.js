@@ -26,11 +26,9 @@ const baseUrl = process.env.SUBFOLDER || '/';
 const port = process.env.KASM_PORT || '443';
 const crypto = require('node:crypto');
 const installedMarker = '/opt/kasm/current';
-// install.sh creates /opt/kasm/current before it finishes, so /opt/kasm/current alone
-// cannot tell a finished wizard install from a failed one; these markers can
+// Written only when install.sh exits successfully
 const installCompleteMarker = '/opt/kasm/.wizard_install_complete';
-// Written before install.sh runs and removed on success, so a failed or
-// interrupted wizard install does not count as installed
+// Written before install.sh runs and removed on success
 const installPendingMarker = '/opt/kasm/.wizard_install_pending';
 let EULA;
 let images;
@@ -166,7 +164,7 @@ const setupToken = crypto.randomBytes(32).toString('hex');
 console.log('==================================================================');
 console.log('Kasm Install Wizard setup token (required to use the wizard):');
 console.log('  ' + setupToken);
-console.log('Open: https://<host>:3000' + baseUrl + '?token=' + setupToken);
+console.log('Open: https://<host>:3000' + baseUrl + '#token=' + setupToken);
 console.log('==================================================================');
 
 function tokenValid(candidate) {
@@ -176,10 +174,11 @@ function tokenValid(candidate) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// install.sh links /opt/kasm/current after initializing the database, and running it
+// again resets the database, so a failed install past that point counts as installed.
 // lstat so a dangling symlink still counts as installed
 function kasmInstalled() {
   if (fs.existsSync(installCompleteMarker)) return true;
-  if (fs.existsSync(installPendingMarker)) return false;
   try {
     fs.lstatSync(installedMarker);
     return true;
@@ -189,6 +188,7 @@ function kasmInstalled() {
 }
 
 let jobRunning = false;
+let jobOwner = null;
 // Set synchronously by noWizard so no job can start while it writes the marker and exits
 let stopping = false;
 
@@ -213,10 +213,21 @@ io.use(function (socket, next) {
   next(new Error('unauthorized'));
 });
 io.on('connection', async function (socket) {
-  // keepTerminal: the job ran, so the client should keep its output on screen
+  // keepTerminal: this client has job output on screen
   function refuse(message, keepTerminal) {
     console.error('Wizard request refused: ' + message);
     socket.emit('wizarderror', message, !!keepTerminal);
+  }
+  function refuseBusy() {
+    return refuse('An install or upgrade is already running.', jobOwner === socket.id);
+  }
+  function startJob() {
+    jobRunning = true;
+    jobOwner = socket.id;
+  }
+  function endJob() {
+    jobRunning = false;
+    jobOwner = null;
   }
 
   // Run bash install with our custom flags
@@ -228,18 +239,18 @@ io.on('connection', async function (socket) {
       return refuse('The install wizard is stopping.');
     }
     if (jobRunning) {
-      return refuse('An install or upgrade is already running.');
+      return refuseBusy();
     }
     if (!Array.isArray(data) || !data[0] || typeof data[0] !== 'object' ||
         typeof data[0].adminPass !== 'string' || data[0].adminPass.length === 0 ||
         typeof data[0].userPass !== 'string' || data[0].userPass.length === 0) {
       return refuse('Invalid install settings.');
     }
-    jobRunning = true;
+    startJob();
     try {
       await runInstall(data);
     } catch (err) {
-      jobRunning = false;
+      endJob();
       console.error('Install failed to start:', err.message);
       refuse('Install failed to start: ' + err.message);
     }
@@ -286,11 +297,14 @@ io.on('connection', async function (socket) {
             console.error('Could not remove install pending marker:', err.message);
           }
           socket.emit('done', port);
+        } else if (kasmInstalled()) {
+          refuse('Installer exited with code ' + code + ' after the database was set up, check the output above. ' +
+            'The wizard will not run the installer again because that would reset the database.', true);
         } else {
           refuse('Installer exited with code ' + code + ', check the output above. The install can be retried.', true);
         }
       } finally {
-        jobRunning = false;
+        endJob();
       }
     });
   }
@@ -304,13 +318,13 @@ io.on('connection', async function (socket) {
       return refuse('The install wizard is stopping.');
     }
     if (jobRunning) {
-      return refuse('An install or upgrade is already running.');
+      return refuseBusy();
     }
-    jobRunning = true;
+    startJob();
     try {
       await runUpgrade();
     } catch (err) {
-      jobRunning = false;
+      endJob();
       console.error('Upgrade failed to start:', err.message);
       refuse('Upgrade failed to start: ' + err.message);
     }
@@ -337,7 +351,7 @@ io.on('connection', async function (socket) {
         console.error('Upgrade post-processing failed:', err.message);
         refuse('Upgrade finished but post-processing failed: ' + err.message, true);
       } finally {
-        jobRunning = false;
+        endJob();
       }
     });
   }
@@ -353,7 +367,7 @@ io.on('connection', async function (socket) {
   async function sendLanding() {
     let containers = await docker.listContainers();
     // Installed systems get the dashboard even when their containers are stopped
-    // A failed wizard install (pending marker) may leave containers behind; offer the installer again
+    // An install that failed before /opt/kasm/current may leave containers behind; offer the installer again
     if (kasmInstalled() || (containers.length !== 0 && !fs.existsSync(installPendingMarker))) {
       let dashinfo = {};
       // Get version information

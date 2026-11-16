@@ -26,15 +26,18 @@ function loadToken() {
   try { stored = sessionStorage.getItem('kasmWizardToken') || ''; } catch (err) {}
   return stored || memToken;
 }
+// #token= keeps the token out of HTTP requests; ?token= still works
 (function captureToken() {
   const params = new URLSearchParams(window.location.search);
-  const urlToken = params.get('token');
-  if (urlToken) {
-    storeToken(urlToken);
-    params.delete('token');
-    const query = params.toString();
-    window.history.replaceState(null, '', path + (query ? '?' + query : '') + window.location.hash);
-  }
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const urlToken = hashParams.get('token') || params.get('token');
+  if (!urlToken && !params.has('token') && !hashParams.has('token')) return;
+  if (urlToken) storeToken(urlToken);
+  params.delete('token');
+  hashParams.delete('token');
+  const query = params.toString();
+  const hash = hashParams.toString();
+  window.history.replaceState(null, '', path + (query ? '?' + query : '') + (hash ? '#' + hash : ''));
 })();
 
 const socket = io(protocol + '//' + host + ':' + port, {
@@ -45,6 +48,7 @@ const socket = io(protocol + '//' + host + ':' + port, {
 let tokenRequired = false;
 function showTokenRequired() {
   showContainer();
+  view = 'loading';
   titleChange('Setup token required');
   $('#container').append($('<h2>', {class: 'center'}).text('A setup token is required. Find it in the container logs (docker logs <container>) and reload this page.'));
 }
@@ -64,26 +68,24 @@ socket.on('connect_error', function (err) {
 
 function wizardError(message, keepTerminal) {
   alert(message);
-  if (!jobStarted) return;
+  // Keep job output on screen; a refused job's empty terminal goes back to landing
+  if (!jobStarted || keepTerminal) return;
   jobStarted = false;
-  // A refused job leaves an empty terminal; go back to the landing page.
-  // A job that ran and failed keeps its output on screen.
-  if (!keepTerminal) {
-    isUpgrade = false;
-    landingReceived = false;
-    requestLanding();
-  }
+  isUpgrade = false;
+  view = 'loading';
+  requestLanding();
 }
 
 //// Page Functions ////
 
 // Render term data
 function renderTerm(data) {
-  term.write(data);
+  if (term) term.write(data);
 }
 
 // Execute install
 async function install() {
+  if (jobStarted) return;
   jobStarted = true;
   showTerminal()
   titleChange('Installing');
@@ -109,6 +111,7 @@ async function install() {
 
 // Execute upgrade
 async function upgrade() {
+  if (jobStarted) return;
   isUpgrade = true;
   jobStarted = true;
   showTerminal();
@@ -118,6 +121,7 @@ async function upgrade() {
 
 // Show page container
 function showContainer() {
+  view = 'form';
   $('#terminal').empty();
   $('#terminal').css('display', 'none');
   term = null;
@@ -127,6 +131,7 @@ function showContainer() {
 
 // Show terminal
 function showTerminal() {
+  view = 'terminal';
   $('#container').empty();
   $('#container').css('display', 'none');
   $('#terminal').empty();
@@ -159,6 +164,7 @@ function renderInstall(data) {
   $('#container').append(EULADiv);
   let EULAButton = $('<button>', {id: 'EULAButton', onclick: 'pickSettings()', class: 'btn btn-default btn-ghost'}).text('Accept and continue');
   $('#container').append(EULAButton);
+  view = 'landing';
 }
 
 // Render Dashboard
@@ -260,6 +266,7 @@ async function renderDash(data) {
     dockerCard,
     killButton
   ]);
+  view = 'landing';
 }
 
 // Kill off wizard
@@ -269,6 +276,7 @@ function nowizard() {
 function wizardKilled() {
   showContainer();
   titleChange('Wizard killed');
+  view = 'done';
   let titleBar = $('<div>');
   titleBar.append($('<h2>', {class: 'center'}).text('Install Wizard has been disabled'));
   titleBar.append($('<h3>', {class: 'center'}).text('To re-enable please remove the /opt/NO_WIZARD file'));
@@ -438,6 +446,7 @@ function done(data) {
   const rollingTag = (typeof data === 'object') ? data.rollingTag : null;
   showContainer();
   titleChange('Complete');
+  view = 'done';
   let titleBar = $('<div>');
   if (isUpgrade) {
     titleBar.append($('<h2>', {class: 'center'}).text('Upgrade Complete'));
@@ -460,18 +469,15 @@ socket.on('term', renderTerm);
 socket.on('done', done);
 socket.on('wizardkilled', wizardKilled);
 socket.on('wizarderror', wizardError);
-// Re-requested on reconnect until a landing page arrives, but never once an
-// install/upgrade terminal is showing
+// Refreshed on every (re)connect, but not over a form, job terminal or final page
 let pageLoaded = false;
-let landingReceived = false;
+let view = 'loading';  // loading | landing | form | terminal | done
 let jobStarted = false;
 function requestLanding() {
-  if (pageLoaded && socket.connected && !landingReceived && !jobStarted) {
+  if (pageLoaded && socket.connected && !jobStarted && (view === 'loading' || view === 'landing')) {
     socket.emit('renderlanding');
   }
 }
-socket.on('renderinstall', function () { landingReceived = true; });
-socket.on('renderdash', function () { landingReceived = true; });
 socket.on('connect', function () {
   tokenRequired = false;
   requestLanding();
@@ -484,8 +490,9 @@ window.onload = function() {
     showTokenRequired();
     return;
   }
-  if (!landingReceived) {
+  if (view === 'loading') {
     showContainer();
+    view = 'loading';
     titleChange('Loading');
     $('#container').append($('<div>').append($('<h2>', {class: 'center'}).text('Docker still loading, please refresh for installer')))
   }

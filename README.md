@@ -42,8 +42,8 @@ As configured files ingested from a current Kasm Workspaces installer are needed
 
 The wizard can install, re-install and upgrade Kasm, so access to it is gated:
 
-* **Setup token:** on every start the wizard prints a random one-time token to its log (`docker logs <container>`). Open `https://<host>:3000/?token=<token>`, or enter the token when prompted. Socket connections without the token are rejected.
-* **No re-install:** the `install` action is refused once `/opt/kasm/current` exists, unless a previous wizard install failed or was interrupted (`/opt/kasm/.wizard_install_pending` present), in which case it can be retried. A successful wizard install writes `/opt/kasm/.wizard_install_complete`.
+* **Setup token:** on every start the wizard prints a random one-time token to its log (`docker logs <container>`). Open `https://<host>:3000/#token=<token>` (the token stays in the URL fragment, so it is not sent in HTTP requests), or enter the token when prompted. Socket connections without the token are rejected.
+* **No re-install:** the `install` action is refused once `/opt/kasm/current` exists. The installer creates it after the database is initialized, and running the installer again resets the database, so a wizard install that fails after that point is not retried by the wizard; finish or repair it from the installer output. An install that fails earlier (`/opt/kasm/.wizard_install_pending` present, no `/opt/kasm/current`) can be retried. A successful wizard install writes `/opt/kasm/.wizard_install_complete`.
 * **Stop Install Wizard** writes `/opt/NO_WIZARD` and exits the wizard process.
 
 Never expose port 3000 to untrusted networks; bind it to `127.0.0.1` where possible.
