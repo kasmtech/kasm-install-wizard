@@ -174,8 +174,10 @@ function tokenValid(candidate) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// install.sh links /opt/kasm/current after initializing the database, and running it
-// again resets the database, so a failed install past that point counts as installed.
+// install.sh creates /opt/kasm/current after seeding the database and before it first
+// starts Kasm's services. Before that the database only holds this install's seed data,
+// after it may hold user data that re-running install.sh would reset, so a failed
+// install past that point counts as installed.
 // lstat so a dangling symlink still counts as installed
 function kasmInstalled() {
   if (fs.existsSync(installCompleteMarker)) return true;
@@ -185,6 +187,10 @@ function kasmInstalled() {
   } catch (err) {
     return false;
   }
+}
+
+function exitText(code, signal) {
+  return signal ? 'was killed by signal ' + signal : 'exited with code ' + code;
 }
 
 let jobRunning = false;
@@ -214,9 +220,10 @@ io.use(function (socket, next) {
 });
 io.on('connection', async function (socket) {
   // keepTerminal: this client has job output on screen
-  function refuse(message, keepTerminal) {
+  // jobEnded: that job has finished, so the client can offer a way back
+  function refuse(message, keepTerminal, jobEnded) {
     console.error('Wizard request refused: ' + message);
-    socket.emit('wizarderror', message, !!keepTerminal);
+    socket.emit('wizarderror', message, !!keepTerminal, !!jobEnded);
   }
   function refuseBusy() {
     return refuse('An install or upgrade is already running.', jobOwner === socket.id);
@@ -283,9 +290,10 @@ io.on('connection', async function (socket) {
     cmd.on('data', function(data) {
       socket.emit('term', data);
     });
+    // node-pty reports code 0 for a process killed by a signal
     cmd.on('exit', async function(code, signal) {
       try {
-        if (code == 0) {
+        if (code === 0 && !signal) {
           try {
             await fsw.writeFile(installCompleteMarker, new Date().toISOString() + '\n');
           } catch (err) {
@@ -298,10 +306,11 @@ io.on('connection', async function (socket) {
           }
           socket.emit('done', port);
         } else if (kasmInstalled()) {
-          refuse('Installer exited with code ' + code + ' after the database was set up, check the output above. ' +
-            'The wizard will not run the installer again because that would reset the database.', true);
+          refuse('Installer ' + exitText(code, signal) + ' after Kasm was installed, check the output above. ' +
+            'The wizard will not run the installer again because that would reset the database.', true, true);
         } else {
-          refuse('Installer exited with code ' + code + ', check the output above. The install can be retried.', true);
+          refuse('Installer ' + exitText(code, signal) + ' before Kasm services were started, check the output above. ' +
+            'The install can be retried, this starts it over including its database.', true, true);
         }
       } finally {
         endJob();
@@ -338,18 +347,19 @@ io.on('connection', async function (socket) {
     cmd.on('data', function(data) {
       socket.emit('term', data);
     });
+    // node-pty reports code 0 for a process killed by a signal
     cmd.on('exit', async function(code, signal) {
       try {
-        if (code == 0) {
+        if (code === 0 && !signal) {
           await fsw.copyFile('/version.txt', '/opt/version.txt');
           const rollingTag = await getRollingWeeklyTag(currentVersion, arch);
           socket.emit('done', {port, rollingTag});
         } else {
-          refuse('Upgrade exited with code ' + code + ', check the output above.', true);
+          refuse('Upgrade ' + exitText(code, signal) + ', check the output above.', true, true);
         }
       } catch (err) {
         console.error('Upgrade post-processing failed:', err.message);
-        refuse('Upgrade finished but post-processing failed: ' + err.message, true);
+        refuse('Upgrade finished but post-processing failed: ' + err.message, true, true);
       } finally {
         endJob();
       }

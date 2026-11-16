@@ -66,13 +66,27 @@ socket.on('connect_error', function (err) {
   }
 });
 
-function wizardError(message, keepTerminal) {
+function wizardError(message, keepTerminal, jobEnded) {
   alert(message);
-  // Keep job output on screen; a refused job's empty terminal goes back to landing
-  if (!jobStarted || keepTerminal) return;
+  if (!jobStarted) return;
+  // Failed job: keep its output on screen until the user goes back
+  if (jobEnded) {
+    jobStarted = false;
+    titleChange(isUpgrade ? 'Upgrade failed' : 'Install failed');
+    $('#title').append($('<button>', {class: 'btn btn-default btn-ghost btn-small', style: 'margin-left: 10px;', onclick: 'backToStart()'}).text('Back to start'));
+    return;
+  }
+  // Our job is still running
+  if (keepTerminal) return;
+  // A refused job leaves an empty terminal
+  backToStart();
+}
+
+function backToStart() {
   jobStarted = false;
   isUpgrade = false;
   view = 'loading';
+  titleChange('Loading');
   requestLanding();
 }
 
@@ -369,6 +383,9 @@ async function pickImages(upgrade) {
   }
   showContainer();
   titleChange('Image Selection');
+  // A new selection every time, e.g. after Back to start
+  installImages = [];
+  selected = false;
   let imagesDiv = $('<div>', {class: 'cardcontainer', id: 'images'});
   $('#container').append(imagesDiv);
   for (let image of images.images) {
@@ -451,20 +468,23 @@ function done(data) {
   if (isUpgrade) {
     titleBar.append($('<h2>', {class: 'center'}).text('Upgrade Complete'));
     titleBar.append($('<h3>', {class: 'center'}).text('Remember to update your workspace image tags to :' + (rollingTag || (currentVersion + '-rolling-weekly'))));
+    titleBar.append($('<h3>', {class: 'center'}).text('This page will reload in 5 seconds'));
+    setTimeout(function(){
+      location.reload(true);
+    }, 5000);
   } else {
+    // The wizard may be stopped after a first install, so no reload
     titleBar.append($('<h2>', {class: 'center'}).text('Installation Complete'));
+    titleBar.append($('<h3>', {class: 'center'}).text('The install wizard can be closed, it may stop on its own.'));
   }
-  titleBar.append($('<h3>', {class: 'center'}).text('This page will reload in 5 seconds'));
   titleBar.append($('<h3>', {class: 'center'}).text('Your installation is available on port ' + port));
   $('#container').append(titleBar);
-  setTimeout(function(){
-    location.reload(true);
-  }, 5000);
 }
 
 //// Socket events ////
-socket.on('renderinstall', renderInstall);
-socket.on('renderdash', renderDash);
+// Landing responses arrive asynchronously; never apply one over a form or a job
+socket.on('renderinstall', function (data) { if (landingAllowed()) renderInstall(data); });
+socket.on('renderdash', function (data) { if (landingAllowed()) renderDash(data); });
 socket.on('term', renderTerm);
 socket.on('done', done);
 socket.on('wizardkilled', wizardKilled);
@@ -473,8 +493,11 @@ socket.on('wizarderror', wizardError);
 let pageLoaded = false;
 let view = 'loading';  // loading | landing | form | terminal | done
 let jobStarted = false;
+function landingAllowed() {
+  return !jobStarted && (view === 'loading' || view === 'landing');
+}
 function requestLanding() {
-  if (pageLoaded && socket.connected && !jobStarted && (view === 'loading' || view === 'landing')) {
+  if (pageLoaded && socket.connected && landingAllowed()) {
     socket.emit('renderlanding');
   }
 }
