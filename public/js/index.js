@@ -14,7 +14,66 @@ const host = window.location.hostname;
 const port = window.location.port;
 const protocol = window.location.protocol;
 const path = window.location.pathname;
-const socket = io(protocol + '//' + host + ':' + port, { path: path + 'socket.io'});
+
+// In-memory copy for browsers where sessionStorage is blocked
+let memToken = '';
+function storeToken(value) {
+  memToken = value;
+  try { sessionStorage.setItem('kasmWizardToken', value); } catch (err) {}
+}
+function loadToken() {
+  let stored = '';
+  try { stored = sessionStorage.getItem('kasmWizardToken') || ''; } catch (err) {}
+  return stored || memToken;
+}
+(function captureToken() {
+  const params = new URLSearchParams(window.location.search);
+  const urlToken = params.get('token');
+  if (urlToken) {
+    storeToken(urlToken);
+    params.delete('token');
+    const query = params.toString();
+    window.history.replaceState(null, '', path + (query ? '?' + query : '') + window.location.hash);
+  }
+})();
+
+const socket = io(protocol + '//' + host + ':' + port, {
+  path: path + 'socket.io',
+  auth: function (cb) { cb({ token: loadToken() }); }
+});
+
+let tokenRequired = false;
+function showTokenRequired() {
+  showContainer();
+  titleChange('Setup token required');
+  $('#container').append($('<h2>', {class: 'center'}).text('A setup token is required. Find it in the container logs (docker logs <container>) and reload this page.'));
+}
+
+socket.on('connect_error', function (err) {
+  if (err && err.message === 'unauthorized') {
+    const entered = window.prompt('Enter the install wizard setup token (shown in the container logs):');
+    if (entered) {
+      storeToken(entered.trim());
+      socket.connect();
+    } else {
+      tokenRequired = true;
+      if (pageLoaded) showTokenRequired();
+    }
+  }
+});
+
+function wizardError(message, keepTerminal) {
+  alert(message);
+  if (!jobStarted) return;
+  jobStarted = false;
+  // A refused job leaves an empty terminal; go back to the landing page.
+  // A job that ran and failed keeps its output on screen.
+  if (!keepTerminal) {
+    isUpgrade = false;
+    landingReceived = false;
+    requestLanding();
+  }
+}
 
 //// Page Functions ////
 
@@ -25,6 +84,7 @@ function renderTerm(data) {
 
 // Execute install
 async function install() {
+  jobStarted = true;
   showTerminal()
   titleChange('Installing');
   // Create new object based on image selection
@@ -35,6 +95,7 @@ async function install() {
     for (let image of installImages) {
       let srcImage = images.images.find(x => x.friendly_name === image);
       if (!srcImage) {
+        jobStarted = false;
         alert('Error: image "' + image + '" not found. Please refresh and try again.');
         return;
       }
@@ -49,6 +110,7 @@ async function install() {
 // Execute upgrade
 async function upgrade() {
   isUpgrade = true;
+  jobStarted = true;
   showTerminal();
   titleChange('Upgrading');
   socket.emit('upgrade', [upgradeSettings, false]);
@@ -397,11 +459,35 @@ socket.on('renderdash', renderDash);
 socket.on('term', renderTerm);
 socket.on('done', done);
 socket.on('wizardkilled', wizardKilled);
+socket.on('wizarderror', wizardError);
+// Re-requested on reconnect until a landing page arrives, but never once an
+// install/upgrade terminal is showing
+let pageLoaded = false;
+let landingReceived = false;
+let jobStarted = false;
+function requestLanding() {
+  if (pageLoaded && socket.connected && !landingReceived && !jobStarted) {
+    socket.emit('renderlanding');
+  }
+}
+socket.on('renderinstall', function () { landingReceived = true; });
+socket.on('renderdash', function () { landingReceived = true; });
+socket.on('connect', function () {
+  tokenRequired = false;
+  requestLanding();
+});
 
 // Render landing on page load
 window.onload = function() {
-  showContainer();
-  titleChange('Loading');
-  $('#container').append($('<div>').append($('<h2>', {class: 'center'}).text('Docker still loading, please refresh for installer')))
-  socket.emit('renderlanding');
+  pageLoaded = true;
+  if (tokenRequired) {
+    showTokenRequired();
+    return;
+  }
+  if (!landingReceived) {
+    showContainer();
+    titleChange('Loading');
+    $('#container').append($('<div>').append($('<h2>', {class: 'center'}).text('Docker still loading, please refresh for installer')))
+  }
+  requestLanding();
 }
