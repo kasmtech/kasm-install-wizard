@@ -8,6 +8,9 @@ const upgradeSettings = {};
 let currentVersion = '';
 let isUpgrade = false;
 let selected = false;
+let pageLoaded = false;
+let view = 'loading';  // loading | landing | form | terminal | done
+let jobStarted = false;
 
 // Socket.io connection
 const host = window.location.hostname;
@@ -468,17 +471,15 @@ function done(data) {
   if (isUpgrade) {
     titleBar.append($('<h2>', {class: 'center'}).text('Upgrade Complete'));
     titleBar.append($('<h3>', {class: 'center'}).text('Remember to update your workspace image tags to :' + (rollingTag || (currentVersion + '-rolling-weekly'))));
-    titleBar.append($('<h3>', {class: 'center'}).text('This page will reload in 5 seconds'));
-    setTimeout(function(){
-      location.reload(true);
-    }, 5000);
   } else {
-    // The wizard may be stopped after a first install, so no reload
     titleBar.append($('<h2>', {class: 'center'}).text('Installation Complete'));
-    titleBar.append($('<h3>', {class: 'center'}).text('The install wizard can be closed, it may stop on its own.'));
   }
+  titleBar.append($('<h3>', {class: 'center'}).text('This page will reload in 5 seconds'));
   titleBar.append($('<h3>', {class: 'center'}).text('Your installation is available on port ' + port));
   $('#container').append(titleBar);
+  setTimeout(function(){
+    location.reload(true);
+  }, 5000);
 }
 
 //// Socket events ////
@@ -490,9 +491,6 @@ socket.on('done', done);
 socket.on('wizardkilled', wizardKilled);
 socket.on('wizarderror', wizardError);
 // Refreshed on every (re)connect, but not over a form, job terminal or final page
-let pageLoaded = false;
-let view = 'loading';  // loading | landing | form | terminal | done
-let jobStarted = false;
 function landingAllowed() {
   return !jobStarted && (view === 'loading' || view === 'landing');
 }
