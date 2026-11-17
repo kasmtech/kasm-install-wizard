@@ -9,23 +9,103 @@ const upgradeSettings = {};
 let currentVersion = '';
 let isUpgrade = false;
 let selected = false;
+let pageLoaded = false;
+let view = 'loading';  // loading | landing | form | terminal | done
+let jobStarted = false;
 
 // Socket.io connection
 const host = window.location.hostname;
 const port = window.location.port;
 const protocol = window.location.protocol;
 const path = window.location.pathname;
-const socket = io(protocol + '//' + host + ':' + port, { path: path + 'socket.io'});
+
+// In-memory copy for browsers where sessionStorage is blocked
+let memToken = '';
+function storeToken(value) {
+  memToken = value;
+  try { sessionStorage.setItem('kasmWizardToken', value); } catch (err) {}
+}
+function loadToken() {
+  let stored = '';
+  try { stored = sessionStorage.getItem('kasmWizardToken') || ''; } catch (err) {}
+  return stored || memToken;
+}
+// Only #token= is accepted, it keeps the token out of HTTP requests.
+// A ?token= is removed from the URL without being used.
+(function captureToken() {
+  const params = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const urlToken = hashParams.get('token');
+  if (!params.has('token') && !hashParams.has('token')) return;
+  if (urlToken) storeToken(urlToken);
+  params.delete('token');
+  hashParams.delete('token');
+  const query = params.toString();
+  const hash = hashParams.toString();
+  window.history.replaceState(null, '', path + (query ? '?' + query : '') + (hash ? '#' + hash : ''));
+})();
+
+const socket = io(protocol + '//' + host + ':' + port, {
+  path: path + 'socket.io',
+  auth: function (cb) { cb({ token: loadToken() }); }
+});
+
+let tokenRequired = false;
+function showTokenRequired() {
+  showContainer();
+  view = 'loading';
+  titleChange('Setup token required');
+  $('#container').append($('<h2>', {class: 'center'}).text('A setup token is required. Find it in the container logs (docker logs <container>) and reload this page.'));
+}
+
+socket.on('connect_error', function (err) {
+  if (err && err.message === 'unauthorized') {
+    const entered = window.prompt('Enter the install wizard setup token (shown in the container logs):');
+    if (entered) {
+      storeToken(entered.trim());
+      socket.connect();
+    } else {
+      tokenRequired = true;
+      if (pageLoaded) showTokenRequired();
+    }
+  }
+});
+
+function wizardError(message, keepTerminal, jobEnded) {
+  alert(message);
+  if (!jobStarted) return;
+  // Failed job: keep its output on screen until the user goes back
+  if (jobEnded) {
+    jobStarted = false;
+    titleChange(isUpgrade ? 'Upgrade failed' : 'Install failed');
+    $('#title').append($('<button>', {class: 'btn btn-default btn-ghost btn-small', style: 'margin-left: 10px;', onclick: 'backToStart()'}).text('Back to start'));
+    return;
+  }
+  // Our job is still running
+  if (keepTerminal) return;
+  // A refused job leaves an empty terminal
+  backToStart();
+}
+
+function backToStart() {
+  jobStarted = false;
+  isUpgrade = false;
+  view = 'loading';
+  titleChange('Loading');
+  requestLanding();
+}
 
 //// Page Functions ////
 
 // Render term data
 function renderTerm(data) {
-  term.write(data);
+  if (term) term.write(data);
 }
 
 // Execute install
 async function install() {
+  if (jobStarted) return;
+  jobStarted = true;
   showTerminal()
   titleChange('Installing');
   // Create new object based on image selection
@@ -36,6 +116,7 @@ async function install() {
     for (let image of installImages) {
       let srcImage = images.images.find(x => x.friendly_name === image);
       if (!srcImage) {
+        jobStarted = false;
         alert('Error: image "' + image + '" not found. Please refresh and try again.');
         return;
       }
@@ -49,7 +130,9 @@ async function install() {
 
 // Execute upgrade
 async function upgrade() {
+  if (jobStarted) return;
   isUpgrade = true;
+  jobStarted = true;
   showTerminal();
   titleChange('Upgrading');
   socket.emit('upgrade', [upgradeSettings, false]);
@@ -57,6 +140,7 @@ async function upgrade() {
 
 // Show page container
 function showContainer() {
+  view = 'form';
   $('#terminal').empty();
   $('#terminal').css('display', 'none');
   term = null;
@@ -66,6 +150,7 @@ function showContainer() {
 
 // Show terminal
 function showTerminal() {
+  view = 'terminal';
   $('#container').empty();
   $('#container').css('display', 'none');
   $('#terminal').empty();
@@ -99,6 +184,7 @@ function renderInstall(data) {
   $('#container').append(EULADiv);
   let EULAButton = $('<button>', {id: 'EULAButton', onclick: 'pickSettings()', class: 'btn btn-default btn-ghost'}).text('Accept and continue');
   $('#container').append(EULAButton);
+  view = 'landing';
 }
 
 // Render Dashboard
@@ -200,6 +286,7 @@ async function renderDash(data) {
     dockerCard,
     killButton
   ]);
+  view = 'landing';
 }
 
 // Kill off wizard
@@ -209,6 +296,7 @@ function nowizard() {
 function wizardKilled() {
   showContainer();
   titleChange('Wizard killed');
+  view = 'done';
   let titleBar = $('<div>');
   titleBar.append($('<h2>', {class: 'center'}).text('Install Wizard has been disabled'));
   titleBar.append($('<h3>', {class: 'center'}).text('To re-enable please remove the /opt/NO_WIZARD file'));
@@ -309,6 +397,9 @@ async function pickImages(upgrade) {
   }
   showContainer();
   titleChange('Image Selection');
+  // A new selection every time, e.g. after Back to start
+  installImages = [];
+  selected = false;
   let imagesDiv = $('<div>', {class: 'cardcontainer', id: 'images'});
   $('#container').append(imagesDiv);
   for (let image of images.images) {
@@ -386,6 +477,7 @@ function done(data) {
   const rollingTag = (typeof data === 'object') ? data.rollingTag : null;
   showContainer();
   titleChange('Complete');
+  view = 'done';
   let titleBar = $('<div>');
   if (isUpgrade) {
     titleBar.append($('<h2>', {class: 'center'}).text('Upgrade Complete'));
@@ -402,16 +494,39 @@ function done(data) {
 }
 
 //// Socket events ////
-socket.on('renderinstall', renderInstall);
-socket.on('renderdash', renderDash);
+// Landing responses arrive asynchronously; never apply one over a form or a job
+socket.on('renderinstall', function (data) { if (landingAllowed()) renderInstall(data); });
+socket.on('renderdash', function (data) { if (landingAllowed()) renderDash(data); });
 socket.on('term', renderTerm);
 socket.on('done', done);
 socket.on('wizardkilled', wizardKilled);
+socket.on('wizarderror', wizardError);
+// Refreshed on every (re)connect, but not over a form, job terminal or final page
+function landingAllowed() {
+  return !jobStarted && (view === 'loading' || view === 'landing');
+}
+function requestLanding() {
+  if (pageLoaded && socket.connected && landingAllowed()) {
+    socket.emit('renderlanding');
+  }
+}
+socket.on('connect', function () {
+  tokenRequired = false;
+  requestLanding();
+});
 
 // Render landing on page load
 window.onload = function() {
-  showContainer();
-  titleChange('Loading');
-  $('#container').append($('<div>').append($('<h2>', {class: 'center'}).text('Docker still loading, please refresh for installer')))
-  socket.emit('renderlanding');
+  pageLoaded = true;
+  if (tokenRequired) {
+    showTokenRequired();
+    return;
+  }
+  if (view === 'loading') {
+    showContainer();
+    view = 'loading';
+    titleChange('Loading');
+    $('#container').append($('<div>').append($('<h2>', {class: 'center'}).text('Docker still loading, please refresh for installer')))
+  }
+  requestLanding();
 }
