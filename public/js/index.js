@@ -30,12 +30,13 @@ function loadToken() {
   try { stored = sessionStorage.getItem('kasmWizardToken') || ''; } catch (err) {}
   return stored || memToken;
 }
-// #token= keeps the token out of HTTP requests; ?token= still works
+// Only #token= is accepted, it keeps the token out of HTTP requests.
+// A ?token= is removed from the URL without being used.
 (function captureToken() {
   const params = new URLSearchParams(window.location.search);
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-  const urlToken = hashParams.get('token') || params.get('token');
-  if (!urlToken && !params.has('token') && !hashParams.has('token')) return;
+  const urlToken = hashParams.get('token');
+  if (!params.has('token') && !hashParams.has('token')) return;
   if (urlToken) storeToken(urlToken);
   params.delete('token');
   hashParams.delete('token');
